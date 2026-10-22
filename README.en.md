@@ -20,13 +20,19 @@
 
 Memory requires spaced repetition, but manual scheduling is too tedious. OpenMarkji turns knowledge into cards and automatically calculates optimal review times. You focus on recall; the algorithm handles the rest.
 
-![Today's learning page](screenshots/04-today.png)
-
 ## Core Features
 
-**Four card types**: Q&A, cloze deletion, LaTeX formulas, answer lines. Write cards in plain text; automatic Markji syntax parsing.
+**Four card types**: Q&A, cloze deletion, LaTeX formulas, answer lines. Write cards in plain text; automatic Markji syntax parsing:
 
-![Formula card](screenshots/05-study-formula.png)
+```text
+[P#H1#Calculus · Fundamentals]
+If F is an antiderivative of f, how is the definite integral computed?
+---
+[E##\int_a^b f(x)\,dx=F(b)-F(a)]
+===CARD===
+[P#H1#Grouped cloze]
+Memory works through [F#1#right timing] and [F#2#active recall].
+```
 
 **Three-view statistics**: Forgetting curve, learning status, memory durability. See your memory retention over time, compared to the Ebbinghaus curve.
 
@@ -37,8 +43,6 @@ Memory requires spaced repetition, but manual scheduling is too tedious. OpenMar
 ![Cognition: ratings last 30 days](assets/charts/cognition-en.svg)
 
 **Focused practice**: Randomly draw 10/20/50 cards from all, favorites, or difficult cards. Independent progress saving without disrupting daily plans.
-
-![Practice setup](screenshots/18-practice-setup.png)
 
 **Complete data**: Drift+SQLite local storage, ZIP backup/restore support, media files included in backups.
 
