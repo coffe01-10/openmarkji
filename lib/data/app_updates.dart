@@ -8,7 +8,7 @@ const appDisplayVersion = '1.01';
 const appBuild = '2';
 const releaseFeed = String.fromEnvironment(
   'OPENMARKJI_UPDATE_URL',
-  defaultValue: 'https://raw.githubusercontent.com/coffe01-10/openmarkji/master/releases.json',
+  defaultValue: 'https://gist.githubusercontent.com/coffe01-10/d395a32c92cdabf8454bb6dd2403c76a/raw/releases.json',
 );
 
 class AppRelease {
