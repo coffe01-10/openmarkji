@@ -10,6 +10,21 @@ class _LibraryPage extends StatefulWidget {
 class _LibraryPageState extends State<_LibraryPage> {
   String _search = '';
   String? _group, _selected;
+  bool _refreshing = false;
+
+  Future<void> _refresh() async {
+    setState(() => _refreshing = true);
+    try {
+      await widget.store.decks();
+      widget.store.changed();
+      if (mounted) _toast(context, '牌组已刷新');
+    } catch (e) {
+      if (mounted) _toast(context, '刷新失败：$e');
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.store,
@@ -24,50 +39,52 @@ class _LibraryPageState extends State<_LibraryPage> {
             )
             .toList();
         final wide = MediaQuery.sizeOf(context).width >= 840;
-        final list = _Page(
-          title: '你的知识收藏',
-          subtitle: 'LIBRARY  /  ${decks.length} 副牌组',
-          trailing: ElasticButton(
-            child: IconButton.filledTonal(
-              style: LiquidGlassScope.of(context)
-                  ? LiquidGlass.buttonStyle(
-                      (_) => LiquidGlassStyle.regular(
-                        Theme.of(context).colorScheme,
-                      ),
-                    )
-                  : null,
-              onPressed: () => _editDeck(context, widget.store),
-              tooltip: '新建牌组',
-              icon: const Icon(Icons.add_rounded),
+        final list = _PinnedPage(
+          title: '牌组',
+          toolbar: _LibraryToolbar(
+            onChanged: (s) => setState(() => _search = s),
+            actions: _GlassToolbar(
+              children: [
+                IconButton(
+                  tooltip: '刷新牌组',
+                  onPressed: _refreshing ? null : _refresh,
+                  icon: _refreshing
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh_rounded),
+                ),
+                IconButton(
+                  tooltip: '新建牌组',
+                  onPressed: () => _editDeck(context, widget.store),
+                  icon: const Icon(Icons.add_rounded),
+                ),
+              ],
             ),
           ),
           children: [
-            _GlassSearchField(
-              onChanged: (s) => setState(() => _search = s),
-              hint: '搜索牌组',
+            Text(
+              '${decks.length} 副牌组',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
-            const SizedBox(height: 14),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                ChoiceChip(
-                  label: const Text('全部'),
-                  selected: _group == null,
-                  onSelected: (_) => setState(() => _group = null),
-                ),
-                ...decks
-                    .map((d) => d.group)
-                    .where((g) => g.isNotEmpty)
-                    .toSet()
-                    .map(
-                      (g) => ChoiceChip(
-                        label: Text(g),
-                        selected: _group == g,
-                        onSelected: (_) => setState(() => _group = g),
-                      ),
-                    ),
-              ],
+            const SizedBox(height: 12),
+            _GlassSegments<String?>(
+              options: {
+                null: '全部',
+                for (final g
+                    in decks
+                        .map((d) => d.group)
+                        .where((g) => g.isNotEmpty)
+                        .toSet())
+                  g: g,
+              },
+              value: _group,
+              onChanged: (g) => setState(() => _group = g),
             ),
             const SizedBox(height: 20),
             if (visible.isEmpty)
@@ -209,14 +226,11 @@ Future<void> _editDeck(
                 tilePadding: EdgeInsets.zero,
                 title: const Text('算法高级设置'),
                 children: [
-                  SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment(value: 6, label: Text('MMX-6')),
-                      ButtonSegment(value: 5, label: Text('MMX-5')),
-                    ],
-                    selected: {algorithm},
-                    onSelectionChanged: (s) => setSheet(() {
-                      algorithm = s.first;
+                  _GlassSegments<int>(
+                    options: const {6: 'MMX-6', 5: 'MMX-5'},
+                    value: algorithm,
+                    onChanged: (value) => setSheet(() {
+                      algorithm = value;
                       params.clear();
                     }),
                   ),
@@ -329,6 +343,13 @@ class _DeckPageState extends State<_DeckPage> {
   String? _chapter, _plan, _tag, _focus;
   final _selected = <String>{};
   final _scroll = ScrollController();
+  final _listKey = GlobalKey();
+  Timer? _selectionTimer;
+  int? _selectionAnchor;
+  int? _selectionEnd;
+  Offset? _selectionPosition;
+  Set<String> _selectionBefore = {};
+  bool _selectionValue = true;
   List<StudyCard> _cards = [];
   DeckData? _deck;
   List<String> _tags = [];
@@ -346,12 +367,14 @@ class _DeckPageState extends State<_DeckPage> {
 
   @override
   void dispose() {
+    _endSelection();
     widget.store.removeListener(_refresh);
     _scroll.dispose();
     super.dispose();
   }
 
   void _refresh() {
+    _endSelection();
     _generation++;
     _cards = [];
     _more = true;
@@ -395,6 +418,75 @@ class _DeckPageState extends State<_DeckPage> {
   void _filter(VoidCallback update) {
     setState(update);
     _refresh();
+  }
+
+  double get _rowExtent =>
+      math.max(56, MediaQuery.textScalerOf(context).scale(14) * 1.4 + 20);
+
+  void _beginSelection(int index, Offset position) {
+    _selectionAnchor = index;
+    _selectionEnd = null;
+    _selectionPosition = position;
+    _selectionBefore = Set.of(_selected);
+    _selectionValue = !_selected.contains(_cards[index].id);
+    _paintSelection();
+    _selectionTimer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      final box = _listKey.currentContext?.findRenderObject() as RenderBox?;
+      final position = _selectionPosition;
+      if (box == null || position == null || !_scroll.hasClients) return;
+      final y = box.globalToLocal(position).dy;
+      const edge = 40.0;
+      final speed = y < edge
+          ? -10 * ((edge - y) / edge).clamp(0.0, 1.0)
+          : y > box.size.height - edge
+          ? 10 * ((y - box.size.height + edge) / edge).clamp(0.0, 1.0)
+          : 0.0;
+      if (speed == 0) return;
+      final offset = (_scroll.offset + speed).clamp(
+        0.0,
+        _scroll.position.maxScrollExtent,
+      );
+      if (offset != _scroll.offset) {
+        _scroll.jumpTo(offset);
+        _paintSelection();
+      }
+    });
+  }
+
+  void _paintSelection() {
+    final anchor = _selectionAnchor;
+    final position = _selectionPosition;
+    final box = _listKey.currentContext?.findRenderObject() as RenderBox?;
+    if (anchor == null || position == null || box == null || _cards.isEmpty) {
+      return;
+    }
+    final index =
+        ((box.globalToLocal(position).dy + _scroll.offset - 8) / _rowExtent)
+            .floor()
+            .clamp(0, _cards.length - 1);
+    if (_selectionEnd == index) return;
+    _selectionEnd = index;
+    final range = _cards
+        .sublist(math.min(anchor, index), math.max(anchor, index) + 1)
+        .map((card) => card.id);
+    setState(() {
+      _selected
+        ..clear()
+        ..addAll(_selectionBefore);
+      if (_selectionValue) {
+        _selected.addAll(range);
+      } else {
+        _selected.removeAll(range);
+      }
+    });
+  }
+
+  void _endSelection() {
+    _selectionTimer?.cancel();
+    _selectionTimer = null;
+    _selectionAnchor = null;
+    _selectionPosition = null;
+    _selectionBefore = {};
   }
 
   Future<void> _batch(String operation) async {
@@ -462,24 +554,34 @@ class _DeckPageState extends State<_DeckPage> {
     return Scaffold(
       backgroundColor: widget.embedded ? c.surface : null,
       appBar: AppBar(
+        clipBehavior: Clip.none,
         automaticallyImplyLeading: !widget.embedded,
+        leading: widget.embedded ? null : _appearanceBack(context),
         title: Text(d?.name ?? '牌组'),
         actions: [
           if (d != null)
-            IconButton(
-              tooltip: '专项练习',
-              icon: const Icon(Icons.school_outlined),
-              onPressed: () => _push(
-                context,
-                _PracticeSetupPage(store: widget.store, deck: d, focus: _focus),
-              ),
+            _GlassToolbar(
+              children: [
+                IconButton(
+                  tooltip: '专项练习',
+                  icon: const Icon(Icons.school_outlined),
+                  onPressed: () => _push(
+                    context,
+                    _PracticeSetupPage(
+                      store: widget.store,
+                      deck: d,
+                      focus: _focus,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '牌组设置',
+                  icon: const Icon(Icons.tune_rounded),
+                  onPressed: () => _editDeck(context, widget.store, deck: d),
+                ),
+              ],
             ),
-          if (d != null)
-            IconButton(
-              tooltip: '牌组设置',
-              icon: const Icon(Icons.tune_rounded),
-              onPressed: () => _editDeck(context, widget.store, deck: d),
-            ),
+          const SizedBox(width: 8),
           _ActionMenu<String>(
             destructive: const {'delete'},
             onSelected: (v) => _action(context, () async {
@@ -528,292 +630,324 @@ class _DeckPageState extends State<_DeckPage> {
               'delete': '删除牌组',
             },
           ),
+          const SizedBox(width: 16),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (d?.description.isNotEmpty ?? false)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 14),
-                    child: Text(
-                      d!.description,
-                      style: TextStyle(color: c.onSurfaceVariant),
-                    ),
-                  ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: d == null
-                            ? null
-                            : () => _push(
+      body: LayoutBuilder(
+        builder: (context, constraints) => Column(
+          children: [
+            // 键盘弹出时让筛选区可以纵向滚动，给卡片和操作底栏留出空间。
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: math.max(
+                  0,
+                  constraints.maxHeight -
+                      56 -
+                      MediaQuery.paddingOf(context).bottom -
+                      _rowExtent,
+                ),
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (d?.description.isNotEmpty ?? false)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Text(
+                            d!.description,
+                            style: TextStyle(color: c.onSurfaceVariant),
+                          ),
+                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _GlassChoice(
+                              label: '写卡片',
+                              onPressed: d == null
+                                  ? null
+                                  : () => _push(
+                                      context,
+                                      _EditorPage(
+                                        store: widget.store,
+                                        deck: d,
+                                        chapter: _chapter ?? '',
+                                      ),
+                                    ),
+                              icon: Icons.add_rounded,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _GlassChoice(
+                              label: '导入',
+                              onPressed: () => _push(
                                 context,
-                                _EditorPage(
+                                _ImportPage(
                                   store: widget.store,
-                                  deck: d,
-                                  chapter: _chapter ?? '',
+                                  deckId: widget.deckId,
                                 ),
                               ),
-                        icon: const Icon(Icons.add_rounded),
-                        label: const Text('写卡片'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _push(
-                          context,
-                          _ImportPage(
-                            store: widget.store,
-                            deckId: widget.deckId,
+                              icon: Icons.file_download_outlined,
+                            ),
                           ),
-                        ),
-                        icon: const Icon(Icons.file_download_outlined),
-                        label: const Text('导入'),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 14),
-                _GlassSearchField(
-                  onChanged: (s) => _filter(() => _search = s),
-                  hint: '搜索内容或标签',
-                  dense: true,
-                ),
-                const SizedBox(height: 10),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      for (final entry in const {
-                        'favorite': '收藏',
-                        'difficult': '难卡',
-                      }.entries)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: FilterChip(
-                            avatar: Icon(
-                              entry.key == 'favorite'
+                      const SizedBox(height: 14),
+                      _GlassSearchField(
+                        onChanged: (s) => _filter(() => _search = s),
+                        hint: '搜索内容或标签',
+                        dense: true,
+                      ),
+                      const SizedBox(height: 10),
+                      _GlassSegments<String?>(
+                        options: const {
+                          null: '全部',
+                          'library': '未加入',
+                          'active': '计划内',
+                          'paused': '暂停',
+                        },
+                        value: _plan,
+                        stretch: true,
+                        onChanged: (value) => _filter(() => _plan = value),
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          for (final entry in const {
+                            'favorite': '收藏',
+                            'difficult': '难卡',
+                          }.entries)
+                            _GlassChoice(
+                              icon: entry.key == 'favorite'
                                   ? Icons.star_outline_rounded
                                   : Icons.psychology_outlined,
-                              size: 18,
+                              label: entry.value,
+                              selected: _focus == entry.key,
+                              onPressed: () => _filter(
+                                () => _focus = _focus == entry.key
+                                    ? null
+                                    : entry.key,
+                              ),
                             ),
-                            label: Text(entry.value),
-                            selected: _focus == entry.key,
-                            onSelected: (selected) => _filter(
-                              () => _focus = selected ? entry.key : null,
+                          _ActionMenu<String>(
+                            tooltip: '按章节筛选',
+                            selected: _chapter ?? '__all',
+                            onSelected: (s) => _filter(
+                              () => _chapter = s == '__all' ? null : s,
+                            ),
+                            options: {
+                              '__all': '所有章节',
+                              '': '未分类',
+                              for (final s in d?.chapters ?? <String>[]) s: s,
+                            },
+                            child: Text(
+                              _chapter == null
+                                  ? '章节 ▾'
+                                  : _chapter!.isEmpty
+                                  ? '未分类 ▾'
+                                  : '$_chapter ▾',
                             ),
                           ),
-                        ),
-                      for (final entry in <String?, String>{
-                        null: '全部',
-                        'library': '未加入',
-                        'active': '计划内',
-                        'paused': '暂停',
-                      }.entries)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: ChoiceChip(
-                            label: Text(entry.value),
-                            selected: _plan == entry.key,
-                            onSelected: (_) => _filter(() => _plan = entry.key),
-                          ),
-                        ),
-                      _ActionMenu<String>(
-                        tooltip: '按章节筛选',
-                        selected: _chapter ?? '__all',
-                        onSelected: (s) =>
-                            _filter(() => _chapter = s == '__all' ? null : s),
-                        options: {
-                          '__all': '所有章节',
-                          '': '未分类',
-                          for (final s in d?.chapters ?? <String>[]) s: s,
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.all(10),
-                          child: Text(
-                            _chapter == null
-                                ? '章节 ▾'
-                                : _chapter!.isEmpty
-                                ? '未分类 ▾'
-                                : '$_chapter ▾',
-                          ),
-                        ),
+                          if (_tags.isNotEmpty)
+                            _ActionMenu<String>(
+                              tooltip: '按标签筛选',
+                              selected: _tag ?? '__all',
+                              onSelected: (s) =>
+                                  _filter(() => _tag = s == '__all' ? null : s),
+                              options: {
+                                '__all': '所有标签',
+                                for (final s in _tags) s: s,
+                              },
+                              child: Text('${_tag ?? '标签'} ▾'),
+                            ),
+                        ],
                       ),
-                      if (_tags.isNotEmpty)
-                        _ActionMenu<String>(
-                          tooltip: '按标签筛选',
-                          selected: _tag ?? '__all',
-                          onSelected: (s) =>
-                              _filter(() => _tag = s == '__all' ? null : s),
-                          options: {
-                            '__all': '所有标签',
-                            for (final s in _tags) s: s,
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.all(10),
-                            child: Text('${_tag ?? '标签'} ▾'),
-                          ),
-                        ),
                     ],
                   ),
                 ),
-              ],
-            ),
-          ),
-          if (_selected.isNotEmpty)
-            Container(
-              color: c.secondaryContainer,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                children: [
-                  TextButton(
-                    onPressed: () => setState(() => _selected.clear()),
-                    child: Text('取消 ${_selected.length}'),
-                  ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () => _batch('active'),
-                    child: const Text('加入计划'),
-                  ),
-                  _ActionMenu<String>(
-                    destructive: const {'delete'},
-                    onSelected: _batch,
-                    options: const {
-                      'paused': '暂停学习',
-                      'library': '移出计划',
-                      'move': '移动到牌组',
-                      'chapter': '移动到章节',
-                      'delete': '删除所选',
-                    },
-                  ),
-                ],
               ),
             ),
-          Expanded(
-            child: _cards.isEmpty && !_loading
-                ? Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: _Empty(
-                      icon: Icons.note_add_outlined,
-                      title: _focus == null ? '这里还没有卡片' : '当前筛选没有卡片',
-                      detail: _focus == 'favorite'
-                          ? '点亮卡片右侧的星标，把重点收进收藏。'
-                          : _focus == 'difficult'
-                          ? '最近一次正式评分为“忘记”或“模糊”的卡片会出现在这里。'
-                          : '新建或导入卡片后，勾选卡片即可加入学习计划。',
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _scroll,
-                    padding: EdgeInsets.fromLTRB(
-                      12,
-                      8,
-                      12,
-                      widget.embedded ? 24 : 100,
-                    ),
-                    itemCount: _cards.length + (_more ? 1 : 0),
-                    itemBuilder: (context, i) {
-                      if (i == _cards.length) {
-                        return const Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Center(
-                            child: CircularProgressIndicator(strokeWidth: 2),
+            Expanded(
+              child: _cards.isEmpty && !_loading
+                  ? SingleChildScrollView(
+                      padding: const EdgeInsets.all(20),
+                      child: _Empty(
+                        icon: Icons.note_add_outlined,
+                        title: _focus == null ? '这里还没有卡片' : '当前筛选没有卡片',
+                        detail: _focus == 'favorite'
+                            ? '点亮卡片右侧的星标，把重点收进收藏。'
+                            : _focus == 'difficult'
+                            ? '最近一次正式评分为“忘记”或“模糊”的卡片会出现在这里。'
+                            : '新建或导入卡片后，勾选卡片即可加入学习计划。',
+                      ),
+                    )
+                  : ListView.builder(
+                      key: _listKey,
+                      controller: _scroll,
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      itemExtent: _rowExtent,
+                      itemCount: _cards.length + (_more ? 1 : 0),
+                      itemBuilder: (context, i) {
+                        if (i == _cards.length) {
+                          return const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Center(
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          );
+                        }
+                        final card = _cards[i];
+                        return Card(
+                          key: ValueKey(card.id),
+                          margin: const EdgeInsets.symmetric(vertical: 3),
+                          clipBehavior: Clip.antiAlias,
+                          shape: const RoundedSuperellipseBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(16)),
                           ),
-                        );
-                      }
-                      final card = _cards[i];
-                      return Card(
-                        key: ValueKey(card.id),
-                        margin: const EdgeInsets.symmetric(vertical: 5),
-                        color: _selected.contains(card.id)
-                            ? c.secondaryContainer
-                            : c.surfaceContainerLow,
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          leading: Checkbox(
-                            value: _selected.contains(card.id),
-                            onChanged: (checked) => setState(() {
-                              checked!
-                                  ? _selected.add(card.id)
-                                  : _selected.remove(card.id);
-                            }),
-                          ),
-                          trailing: _FavoriteButton(
-                            store: widget.store,
-                            card: card,
-                          ),
-                          title: Text(
-                            _short(card.source, 100),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 15, height: 1.5),
-                          ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              '${card.chapter.isEmpty ? '未分类' : card.chapter} · ${switch (card.plan) {
-                                'active' => card.isNew ? '等待新学' : '计划内',
-                                'paused' => '已暂停',
-                                _ => '未加入计划',
-                              }}${card.tags.isEmpty ? '' : ' · ${card.tags.join(' / ')}'}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 11),
+                          color: _selected.contains(card.id)
+                              ? c.secondaryContainer
+                              : c.surfaceContainerLow,
+                          child: InkWell(
+                            onTap: () => _push(
+                              context,
+                              _CardPage(store: widget.store, cardId: card.id),
+                            ),
+                            onLongPress: () =>
+                                setState(() => _selected.add(card.id)),
+                            child: Row(
+                              children: [
+                                GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onVerticalDragStart: (event) =>
+                                      _beginSelection(i, event.globalPosition),
+                                  onVerticalDragUpdate: (event) {
+                                    _selectionPosition = event.globalPosition;
+                                    _paintSelection();
+                                  },
+                                  onVerticalDragEnd: (_) => _endSelection(),
+                                  onVerticalDragCancel: _endSelection,
+                                  child: SizedBox(
+                                    width: 44,
+                                    height: double.infinity,
+                                    child: Checkbox(
+                                      value: _selected.contains(card.id),
+                                      onChanged: (checked) => setState(() {
+                                        checked!
+                                            ? _selected.add(card.id)
+                                            : _selected.remove(card.id);
+                                      }),
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Tooltip(
+                                    message:
+                                        '${card.chapter.isEmpty ? '未分类' : card.chapter} · ${switch (card.plan) {
+                                          'active' => card.isNew ? '等待新学' : '计划内',
+                                          'paused' => '已暂停',
+                                          _ => '未加入计划',
+                                        }}${card.tags.isEmpty ? '' : ' · ${card.tags.join(' / ')}'}',
+                                    child: Text(
+                                      _short(card.source, 140),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                _FavoriteButton(
+                                  store: widget.store,
+                                  card: card,
+                                ),
+                                const SizedBox(width: 4),
+                              ],
                             ),
                           ),
-                          onTap: () => _push(
-                            context,
-                            _CardPage(store: widget.store, cardId: card.id),
-                          ),
-                          onLongPress: () =>
-                              setState(() => _selected.add(card.id)),
+                        );
+                      },
+                    ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 4,
+                ),
+                child: SizedBox(
+                  height: 48,
+                  child: _selected.isNotEmpty
+                      ? Row(
+                          children: [
+                            TextButton(
+                              onPressed: () =>
+                                  setState(() => _selected.clear()),
+                              child: Text('取消 ${_selected.length}'),
+                            ),
+                            const Spacer(),
+                            TextButton(
+                              onPressed: () => _batch('active'),
+                              child: const Text('加入计划'),
+                            ),
+                            _ActionMenu<String>(
+                              destructive: const {'delete'},
+                              onSelected: _batch,
+                              options: const {
+                                'paused': '暂停学习',
+                                'library': '移出计划',
+                                'move': '移动到牌组',
+                                'chapter': '移动到章节',
+                                'delete': '删除所选',
+                              },
+                            ),
+                          ],
+                        )
+                      : Row(
+                          children: [
+                            TextButton(
+                              onPressed: () => _action(context, () async {
+                                final rows = await widget.store.cards(
+                                  deckId: widget.deckId,
+                                  search: _search,
+                                  chapter: _chapter,
+                                  plan: _plan,
+                                  tag: _tag,
+                                  focus: _focus,
+                                  limit: 1000000,
+                                );
+                                if (mounted) {
+                                  setState(
+                                    () =>
+                                        _selected.addAll(rows.map((c) => c.id)),
+                                  );
+                                }
+                              }),
+                              child: const Text('全选筛选结果'),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '${_cards.length}${_more ? '+' : ''} 张',
+                              style: TextStyle(
+                                color: c.onSurfaceVariant,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
                         ),
-                      );
-                    },
-                  ),
-          ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-              child: Row(
-                children: [
-                  TextButton(
-                    onPressed: () => _action(context, () async {
-                      final rows = await widget.store.cards(
-                        deckId: widget.deckId,
-                        search: _search,
-                        chapter: _chapter,
-                        plan: _plan,
-                        tag: _tag,
-                        focus: _focus,
-                        limit: 1000000,
-                      );
-                      if (mounted) {
-                        setState(() => _selected.addAll(rows.map((c) => c.id)));
-                      }
-                    }),
-                    child: const Text('全选筛选结果'),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '${_cards.length}${_more ? '+' : ''} 张',
-                    style: TextStyle(color: c.onSurfaceVariant, fontSize: 12),
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

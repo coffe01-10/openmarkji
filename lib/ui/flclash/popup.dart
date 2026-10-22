@@ -366,8 +366,8 @@ class CommonPopupRoute<T> extends PopupRoute<T> {
                   : _cardShadows(colorScheme),
               glass: glass
                   ? (
-                      from: LiquidGlassStyle.regular(colorScheme),
-                      to: LiquidGlassStyle.menu(colorScheme),
+                      from: LiquidGlassScope.controlStyleOf(context),
+                      to: LiquidGlassScope.menuStyleOf(context),
                       rim: LiquidGlassRim.menu(colorScheme),
                     )
                   : null,
@@ -2172,7 +2172,7 @@ class _CommonPopupMenuState extends State<CommonPopupMenu>
     final step = receding ? null : level.step;
     final colorScheme = context.colorScheme;
     final glass = LiquidGlassScope.of(context)
-        ? LiquidGlassStyle.menu(colorScheme)
+        ? LiquidGlassScope.menuStyleOf(context)
         : null;
     final rim = glass == null ? null : LiquidGlassRim.menu(colorScheme);
     final fill = SurfaceLevel.floatingOf(colorScheme).colorOf(colorScheme);

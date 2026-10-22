@@ -119,6 +119,14 @@ class AppStore extends ChangeNotifier {
   );
   Future<void> clearSetting(String key) =>
       db.customStatement('DELETE FROM settings WHERE key=?', [key]);
+
+  /// Preview preferences immediately without reloading study data or writing
+  /// every intermediate slider position to disk. Save when interaction ends.
+  void updatePreferences(void Function(Preferences) update) {
+    update(preferences);
+    notifyListeners();
+  }
+
   Future<void> savePreferences() async {
     await setSetting('preferences', jsonEncode(preferences.toJson()));
     changed();

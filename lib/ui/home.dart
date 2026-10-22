@@ -17,6 +17,7 @@ class _TodayPage extends StatelessWidget {
               completed = data['completed'] as int;
           final hasCards = (data['totalCards'] as int) > 0;
           return _Page(
+            navigationTitle: '今日',
             title: '让记忆，慢慢生长',
             subtitle:
                 '${now.month} 月 ${now.day} 日  ·  星期${['一', '二', '三', '四', '五', '六', '日'][now.weekday - 1]}',
@@ -420,9 +421,10 @@ class _StatsPage extends StatelessWidget {
         final formal = overview['formal'] as int;
         final c = Theme.of(context).colorScheme;
         return _Page(
-          title: '看见每一份积累',
-          subtitle: 'LEARNING INSIGHTS',
-          trailing: const Icon(Icons.insights_rounded, size: 30),
+          navigationTitle: '统计',
+          title: '',
+          subtitle: '',
+          showHeading: false,
           children: [
             _StatisticsViews(store: store),
             const SizedBox(height: 24),

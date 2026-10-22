@@ -1,5 +1,238 @@
 part of 'app.dart';
 
+class _GlassSurface extends StatelessWidget {
+  const _GlassSurface({
+    required this.child,
+    this.pressed = false,
+    this.pill = false,
+  });
+  final Widget child;
+  final bool pressed;
+  final bool pill;
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).colorScheme;
+    final ShapeBorder shape = pill
+        ? const StadiumBorder()
+        : const RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.all(Radius.circular(28)),
+          );
+    final material = Material(
+      color: LiquidGlassScope.of(context)
+          ? Colors.transparent
+          : c.surfaceContainerLow,
+      shape: shape,
+      clipBehavior: Clip.antiAlias,
+      child: child,
+    );
+    if (!LiquidGlassScope.of(context)) return material;
+    return LiquidGlass(
+      style: LiquidGlassScope.controlStyleOf(context),
+      clipper: pill ? null : ShapeBorderClipper(shape: shape),
+      pressed: pressed,
+      child: material,
+    );
+  }
+}
+
+/// FlClash TonalButtonGroup 的按压结构：整块玻璃共用一个弹性变换。
+class _GlassGroup extends StatefulWidget {
+  const _GlassGroup({required this.child, this.pill = false});
+  final Widget child;
+  final bool pill;
+  @override
+  State<_GlassGroup> createState() => _GlassGroupState();
+}
+
+class _GlassGroupState extends State<_GlassGroup> {
+  int? _pointer;
+
+  void _end(PointerEvent event) {
+    if (event.pointer == _pointer) setState(() => _pointer = null);
+  }
+
+  @override
+  Widget build(BuildContext context) => ElasticButton(
+    enabled: !MediaQuery.disableAnimationsOf(context),
+    child: Listener(
+      onPointerDown: (event) {
+        if (_pointer == null && event.buttons & kPrimaryButton != 0) {
+          setState(() => _pointer = event.pointer);
+        }
+      },
+      onPointerUp: _end,
+      onPointerCancel: _end,
+      child: _GlassSurface(
+        pressed: _pointer != null,
+        pill: widget.pill,
+        child: widget.child,
+      ),
+    ),
+  );
+}
+
+/// FlClash 工具栏按钮的 44 dp 胶囊；组内没有额外边距或分隔线。
+class _GlassToolbar extends StatelessWidget {
+  const _GlassToolbar({required this.children});
+  final List<Widget> children;
+  @override
+  Widget build(BuildContext context) => _GlassGroup(
+    pill: true,
+    child: IconButtonTheme(
+      data: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          fixedSize: const Size.square(44),
+          minimumSize: const Size.square(44),
+          padding: EdgeInsets.zero,
+          iconSize: 24,
+          foregroundColor: Theme.of(context).colorScheme.onSurface,
+          backgroundColor: Colors.transparent,
+          visualDensity: VisualDensity.standard,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ).merge(ElasticPress.buttonStyle),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: children),
+    ),
+  );
+}
+
+class _GlassChoice extends StatelessWidget {
+  const _GlassChoice({
+    required this.label,
+    required this.onPressed,
+    this.icon,
+    this.selected = false,
+  });
+  final String label;
+  final VoidCallback? onPressed;
+  final IconData? icon;
+  final bool selected;
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).colorScheme;
+    return Semantics(
+      selected: selected,
+      child: _GlassGroup(
+        pill: true,
+        child: AnimatedContainer(
+          duration: _duration(context, 220),
+          color: selected
+              ? c.primaryContainer.withValues(alpha: .65)
+              : Colors.transparent,
+          child: TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: selected ? c.onPrimaryContainer : c.onSurface,
+              minimumSize: const Size(44, 44),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            onPressed: onPressed,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 18),
+                  const SizedBox(width: 8),
+                ],
+                Text(label),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 分段栏直接复用导航的玻璃透镜、按住滑动和回弹。
+class _GlassSegments<T> extends StatelessWidget {
+  const _GlassSegments({
+    required this.options,
+    required this.value,
+    required this.onChanged,
+    this.stretch = false,
+  });
+  final Map<T, String> options;
+  final T value;
+  final ValueChanged<T> onChanged;
+  final bool stretch;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final entries = options.entries.toList();
+      const style = TextStyle(
+        fontSize: 14,
+        height: 1.4,
+        fontWeight: FontWeight.w500,
+      );
+      var widest = 0.0;
+      var lineHeight = 0.0;
+      for (final entry in entries) {
+        final painter = TextPainter(
+          text: TextSpan(text: entry.value, style: style),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout();
+        widest = math.max(widest, painter.width);
+        lineHeight = math.max(lineHeight, painter.height);
+        painter.dispose();
+      }
+      final cellWidth = math.max(48.0, widest + 28);
+      final available = constraints.hasBoundedWidth
+          ? constraints.maxWidth
+          : cellWidth * entries.length + 8;
+      final columns = ((available - 8) / cellWidth).floor().clamp(
+        1,
+        entries.length,
+      );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var start = 0; start < entries.length; start += columns)
+            Padding(
+              padding: EdgeInsets.only(top: start == 0 ? 0 : 8),
+              child: SizedBox(
+                width: stretch
+                    ? available
+                    : math.min(
+                        available,
+                        cellWidth * math.min(columns, entries.length - start) +
+                            8,
+                      ),
+                height: math.max(44, lineHeight + 20) + 8,
+                child: Builder(
+                  builder: (context) {
+                    final row = entries.sublist(
+                      start,
+                      math.min(start + columns, entries.length),
+                    );
+                    return FloatingNavigationBar(
+                      key: ValueKey(row.first.key),
+                      labelsOnly: true,
+                      destinations: [
+                        for (final entry in row)
+                          NavigationDockDestination(
+                            glyph: Icons.circle,
+                            label: entry.value,
+                          ),
+                      ],
+                      selectedIndex: row.indexWhere(
+                        (entry) => entry.key == value,
+                      ),
+                      onSelected: (index) => onChanged(row[index].key),
+                    );
+                  },
+                ),
+              ),
+            ),
+        ],
+      );
+    },
+  );
+}
+
 class _GlassSearchField extends StatefulWidget {
   const _GlassSearchField({
     required this.hint,
@@ -47,8 +280,17 @@ class _GlassSearchFieldState extends State<_GlassSearchField> {
       controller: _controller,
       focusNode: _focus,
       onChanged: _changed,
+      style: widget.dense ? const TextStyle(fontSize: 14) : null,
       decoration: InputDecoration(
-        prefixIcon: const Icon(Icons.search_rounded),
+        prefixIcon: AnimatedScale(
+          scale: _focus.hasFocus ? 1.12 : 1,
+          duration: _duration(context, 220),
+          child: AnimatedRotation(
+            turns: _focus.hasFocus ? -.035 : 0,
+            duration: _duration(context, 260),
+            child: const Icon(Icons.search_rounded),
+          ),
+        ),
         hintText: widget.hint,
         isDense: widget.dense,
         filled: !glass,
@@ -62,24 +304,36 @@ class _GlassSearchFieldState extends State<_GlassSearchField> {
                   _changed('');
                 },
               ),
-        focusedBorder: glass
-            ? OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-                borderSide: BorderSide(color: c.primary.withValues(alpha: .5)),
-              )
-            : null,
+        border: glass ? InputBorder.none : null,
+        enabledBorder: glass ? InputBorder.none : null,
+        focusedBorder: glass ? InputBorder.none : null,
       ),
     );
-    if (!glass) return field;
-    return LiquidGlass(
-      style: LiquidGlassStyle.regular(c).copyWith(blur: 12),
-      pressed: _focus.hasFocus,
-      clipper: const ShapeBorderClipper(
-        shape: RoundedSuperellipseBorder(
-          borderRadius: BorderRadius.all(Radius.circular(18)),
+    final surface = glass
+        ? _GlassSurface(pressed: _focus.hasFocus, child: field)
+        : field;
+    return AnimatedScale(
+      scale: _focus.hasFocus ? 1.015 : 1,
+      alignment: Alignment.centerLeft,
+      duration: _duration(context, 260),
+      curve: Curves.easeOutCubic,
+      child: AnimatedContainer(
+        duration: _duration(context, 240),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: c.primary.withValues(alpha: _focus.hasFocus ? .28 : 0),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: c.primary.withValues(alpha: _focus.hasFocus ? .08 : 0),
+              blurRadius: _focus.hasFocus ? 18 : 0,
+            ),
+          ],
         ),
+        child: surface,
       ),
-      child: field,
     );
   }
 }
@@ -112,18 +366,34 @@ class _ActionMenu<T> extends StatelessWidget {
           ),
       ],
     ),
-    targetBuilder: (open) => ElasticButton(
-      child: child == null
-          ? IconButton(
-              tooltip: tooltip,
-              onPressed: open,
-              icon: const Icon(Icons.more_vert_rounded),
-            )
-          : Tooltip(
+    targetBuilder: (open) => child == null
+        ? _GlassToolbar(
+            children: [
+              IconButton(
+                tooltip: tooltip,
+                onPressed: open,
+                icon: const Icon(Icons.more_vert_rounded),
+              ),
+            ],
+          )
+        : _GlassGroup(
+            pill: true,
+            child: Tooltip(
               message: tooltip,
-              child: TextButton(onPressed: open, child: child!),
+              child: TextButton(
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(44, 44),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  foregroundColor: Theme.of(context).colorScheme.onSurface,
+                ),
+                onPressed: open,
+                child: child!,
+              ),
             ),
-    ),
+          ),
   );
 }
 
@@ -149,63 +419,173 @@ class _BrandMark extends StatelessWidget {
   }
 }
 
+/// 标题浮于内容之上；复用 FlClash 顶栏的无硬边渐变遮罩。
+class _PinnedPage extends StatefulWidget {
+  const _PinnedPage({
+    required this.title,
+    required this.children,
+    this.toolbar,
+    this.backgroundColor,
+    this.maxWidth = 1120,
+    this.horizontalPadding = 24,
+  });
+  final String title;
+  final List<Widget> children;
+  final Widget? toolbar;
+  final Color? backgroundColor;
+  final double maxWidth, horizontalPadding;
+  @override
+  State<_PinnedPage> createState() => _PinnedPageState();
+}
+
+class _PinnedPageState extends State<_PinnedPage> {
+  final _scroll = ScrollController();
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final rowHeight = math.max(52.0, scaler.scale(28) * 1.15);
+    final headerHeight = rowHeight + 24;
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: widget.maxWidth),
+        child: Stack(
+          children: [
+            ListView(
+              key: PageStorageKey('page-${widget.title}'),
+              controller: _scroll,
+              padding: EdgeInsets.fromLTRB(
+                widget.horizontalPadding,
+                headerHeight + 16,
+                widget.horizontalPadding,
+                132,
+              ),
+              children: widget.children,
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: FloatingHeader(
+                key: ValueKey('pinned-backdrop-${widget.title}'),
+                backgroundColor:
+                    widget.backgroundColor ??
+                    Theme.of(context).scaffoldBackgroundColor,
+                overhang: 16,
+                child: SizedBox(
+                  height: headerHeight,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: widget.horizontalPadding,
+                      vertical: 12,
+                    ),
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          height: rowHeight,
+                          child:
+                              widget.toolbar ??
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      widget.title,
+                                      key: ValueKey(
+                                        'pinned-heading-${widget.title}',
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 28,
+                                        height: 1.15,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: -.5,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Page extends StatelessWidget {
   const _Page({
     required this.title,
     required this.subtitle,
     required this.children,
     this.trailing,
+    this.showHeading = true,
+    this.navigationTitle,
   });
   final String title, subtitle;
   final List<Widget> children;
   final Widget? trailing;
+  final bool showHeading;
+  final String? navigationTitle;
   @override
-  Widget build(BuildContext context) => Center(
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 1120),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(24, 28, 24, 132),
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 12,
-                        letterSpacing: 1,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+  Widget build(BuildContext context) => _PinnedPage(
+    title: navigationTitle ?? title,
+    children: [
+      if (showHeading) ...[
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      letterSpacing: 1,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -1,
-                      ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -1,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              ?trailing,
-            ],
-          ),
-          const SizedBox(height: 28),
-          ...children,
-        ],
-      ),
-    ),
+            ),
+            ?trailing,
+          ],
+        ),
+        const SizedBox(height: 28),
+      ],
+      ...children,
+    ],
   );
 }
 
 class _Panel extends StatelessWidget {
-  const _Panel({required this.child, this.padding = const EdgeInsets.all(22)});
+  const _Panel({
+    super.key,
+    required this.child,
+    this.padding = const EdgeInsets.all(22),
+  });
   final Widget child;
   final EdgeInsetsGeometry padding;
   @override

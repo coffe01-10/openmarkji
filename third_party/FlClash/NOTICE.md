@@ -17,7 +17,18 @@ The appearance page follows FlClash's preview and choice layout.
 Popup menus retain upstream anchor morphing, spring timing, source capture,
 slide-to-pick and value transitions. OpenMarkji adapts typography, icons and
 surface colors to its theme; elevated sheet themes are not used here.
-Dock tint opacity and background blur are configurable through the glass scope.
+Tint opacity and background blur are configurable through the shared glass
+scope for docks, segmented bars, toolbars, search fields and popup menus.
+Lifted lenses retain their clear optical layer so labels remain readable.
+`lib/ui/flclash/floating_header.dart` adapts `lib/ui/sheet_header.dart` at
+the same revision, retaining its eight-step eased scrim, 0.9 top opacity
+and the scaffold's 16 dp overhang. OpenMarkji's `_GlassGroup` follows
+`lib/ui/button.dart`'s `TonalButtonGroup`: one outer elastic press and one
+pressed glass pane shared by all actions; theme adapters use local controls.
+The navigation bar also provides a text-only mode for segmented controls;
+it retains the same lens, pointer tracking, glow, refraction and springs.
+Text-only rows use equal spacing and support an unselected row when large
+text wraps a control. Reduced-motion mode skips spring travel.
 
 OpenMarkji's original code retains its existing license. These copied
 components are GPL-3.0, and a distributed combined application must comply

@@ -189,52 +189,61 @@ class _StatisticsViewsState extends State<_StatisticsViews> {
             ];
             note = '持久度为安排的复习间隔；各门槛累计包含，≥90 天也计入 ≥10 天。按当前学习计划（含暂停）回看各期末状态，已移出或删除的卡片不计。旧记录按保存状态估算，缺失状态处留空。';
           }
-          return _Panel(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '左右滑动查看 · 点选日期查看数值',
-                  style: TextStyle(fontSize: 12, color: theme.onSurfaceVariant),
-                ),
-                const SizedBox(height: 18),
-                _StatisticsGraph(
-                  key: ValueKey('$_tab-$_period-$_cognition-$_revision'),
-                  series: series,
-                  labels: labels,
-                  initialIndex: selected,
-                  bars: bars,
-                  percentage: percentage,
-                  bucketDetails: buckets,
-                  showRatios: _tab == 2,
-                ),
-                if (_tab == 0 && data.$1['modeledCards'] == 0)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 14),
-                    child: Text(
-                      '完成首次学习后显示你的个人曲线。',
-                      style: TextStyle(color: theme.onSurfaceVariant),
+          return AnimatedSwitcher(
+            duration: _duration(context, 240),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeIn,
+            child: _Panel(
+              key: ValueKey('panel-$_tab-$_period-$_cognition-$_revision'),
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                const SizedBox(height: 18),
-                Text(
-                  note,
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.6,
-                    color: theme.onSurfaceVariant,
+                  const SizedBox(height: 6),
+                  Text(
+                    '左右滑动查看 · 点选日期查看数值',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.onSurfaceVariant,
+                    ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 18),
+                  _StatisticsGraph(
+                    key: ValueKey('$_tab-$_period-$_cognition-$_revision'),
+                    series: series,
+                    labels: labels,
+                    initialIndex: selected,
+                    bars: bars,
+                    percentage: percentage,
+                    bucketDetails: buckets,
+                    showRatios: _tab == 2,
+                  ),
+                  if (_tab == 0 && data.$1['modeledCards'] == 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: Text(
+                        '完成首次学习后显示你的个人曲线。',
+                        style: TextStyle(color: theme.onSurfaceVariant),
+                      ),
+                    ),
+                  const SizedBox(height: 18),
+                  Text(
+                    note,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.6,
+                      color: theme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
           );
         },
@@ -264,20 +273,11 @@ class _StatsChoices<T> extends StatelessWidget {
   final T value;
   final ValueChanged<T> onChanged;
   @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: 8,
-    runSpacing: 8,
-    children: [
-      for (final entry in options.entries)
-        ElasticButton(
-          child: ChoiceChip(
-            label: Text(entry.value),
-            selected: entry.key == value,
-            showCheckmark: false,
-            onSelected: (_) => onChanged(entry.key),
-          ),
-        ),
-    ],
+  Widget build(BuildContext context) => _GlassSegments<T>(
+    options: options,
+    value: value,
+    onChanged: onChanged,
+    stretch: options.values.any((label) => label.length >= 4),
   );
 }
 
@@ -394,49 +394,57 @@ class _StatisticsGraphState extends State<_StatisticsGraph> {
               ),
             ),
             Expanded(
-              child: SingleChildScrollView(
-                key: _viewport,
-                controller: _scroll,
-                scrollDirection: Axis.horizontal,
-                child: GestureDetector(
-                  // 图表不能成为一个巨大的语义按钮；Web 无障碍点击会被
-                  // 合成为该按钮中心的点击，丢失用户实际选中的日期坐标。
-                  // 读屏使用下方前后按钮选点，图表本身只朗读当前数据。
-                  excludeFromSemantics: true,
-                  behavior: HitTestBehavior.opaque,
-                  onTapUp: (details) {
-                    final box =
-                        _viewport.currentContext!.findRenderObject()
-                            as RenderBox;
-                    final x =
-                        box.globalToLocal(details.globalPosition).dx +
-                        _scroll.offset;
-                    setState(
-                      () => _selected = (x / slot).floor().clamp(
-                        0,
-                        widget.labels.length - 1,
-                      ),
-                    );
+              child: ScrollConfiguration(
+                behavior: ScrollConfiguration.of(context).copyWith(
+                  dragDevices: {
+                    ...ScrollConfiguration.of(context).dragDevices,
+                    PointerDeviceKind.mouse,
                   },
-                  child: Semantics(
-                    label:
-                        '${widget.labels[_selected]}，${[for (final s in widget.series) '${s.label} ${s.values[_selected]?.toStringAsFixed(1) ?? '无数据'}'].join('，')}',
-                    child: SizedBox(
-                      width: slot * widget.labels.length,
-                      height: chartHeight,
-                      child: CustomPaint(
-                        painter: _StatisticsPlotPainter(
-                          series: widget.series,
-                          labels: widget.labels,
-                          selected: _selected,
-                          maxY: maxY,
-                          bars: widget.bars,
-                          color: c.primary,
-                          gridColor: c.outlineVariant.withValues(alpha: .35),
-                          stripeColor: c.onSurface.withValues(alpha: .025),
-                          labelColor: c.onSurfaceVariant,
-                          scaler: textScaler,
-                          labelHeight: labelHeight,
+                ),
+                child: SingleChildScrollView(
+                  key: _viewport,
+                  controller: _scroll,
+                  scrollDirection: Axis.horizontal,
+                  child: GestureDetector(
+                    // 图表不能成为一个巨大的语义按钮；Web 无障碍点击会被
+                    // 合成为该按钮中心的点击，丢失用户实际选中的日期坐标。
+                    // 读屏使用下方前后按钮选点，图表本身只朗读当前数据。
+                    excludeFromSemantics: true,
+                    behavior: HitTestBehavior.opaque,
+                    onTapUp: (details) {
+                      final box =
+                          _viewport.currentContext!.findRenderObject()
+                              as RenderBox;
+                      final x =
+                          box.globalToLocal(details.globalPosition).dx +
+                          _scroll.offset;
+                      setState(
+                        () => _selected = (x / slot).floor().clamp(
+                          0,
+                          widget.labels.length - 1,
+                        ),
+                      );
+                    },
+                    child: Semantics(
+                      label:
+                          '${widget.labels[_selected]}，${[for (final s in widget.series) '${s.label} ${s.values[_selected]?.toStringAsFixed(1) ?? '无数据'}'].join('，')}',
+                      child: SizedBox(
+                        width: slot * widget.labels.length,
+                        height: chartHeight,
+                        child: CustomPaint(
+                          painter: _StatisticsPlotPainter(
+                            series: widget.series,
+                            labels: widget.labels,
+                            selected: _selected,
+                            maxY: maxY,
+                            bars: widget.bars,
+                            color: c.primary,
+                            gridColor: c.outlineVariant.withValues(alpha: .35),
+                            stripeColor: c.onSurface.withValues(alpha: .025),
+                            labelColor: c.onSurfaceVariant,
+                            scaler: textScaler,
+                            labelHeight: labelHeight,
+                          ),
                         ),
                       ),
                     ),

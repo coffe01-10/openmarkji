@@ -239,6 +239,8 @@ class _EditorPageState extends State<_EditorPage> {
       },
       child: Scaffold(
         appBar: AppBar(
+          clipBehavior: Clip.none,
+          leading: _appearanceBack(context),
           title: Text(widget.card == null ? '写一张新卡' : '编辑卡片'),
           actions: [
             if (!wide)
@@ -397,7 +399,11 @@ class _ImportPageState extends State<_ImportPage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('导入卡片')),
+    appBar: AppBar(
+      clipBehavior: Clip.none,
+      leading: _appearanceBack(context),
+      title: const Text('导入卡片'),
+    ),
     body: SafeArea(
       child: Column(
         children: [
@@ -450,14 +456,10 @@ class _ImportPageState extends State<_ImportPage> {
                         ),
                       ),
                       const SizedBox(height: 18),
-                      SegmentedButton<bool>(
-                        segments: const [
-                          ButtonSegment(value: false, label: Text('墨墨语法')),
-                          ButtonSegment(value: true, label: Text('纯文本')),
-                        ],
-                        selected: {_plain},
-                        onSelectionChanged: (s) =>
-                            setState(() => _plain = s.first),
+                      _GlassSegments<bool>(
+                        options: const {false: '墨墨语法', true: '纯文本'},
+                        value: _plain,
+                        onChanged: (value) => setState(() => _plain = value),
                       ),
                       const SizedBox(height: 20),
                       TextField(

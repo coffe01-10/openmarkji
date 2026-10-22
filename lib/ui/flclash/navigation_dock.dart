@@ -158,6 +158,7 @@ class _Spring extends ChangeNotifier implements ValueListenable<double> {
   SpringDescription? _spring;
   double _now = 0;
   double _start = 0;
+  bool disabled = false;
 
   @override
   double get value => _value;
@@ -176,6 +177,10 @@ class _Spring extends ChangeNotifier implements ValueListenable<double> {
   }
 
   void springTo(double target, SpringDescription spring) {
+    if (disabled) {
+      jumpTo(target);
+      return;
+    }
     _simulation = SpringSimulation(spring, _value, target, velocity);
     _spring = spring;
     _target = target;
@@ -756,11 +761,15 @@ class FloatingNavigationBar extends StatefulWidget {
     required this.destinations,
     required this.selectedIndex,
     required this.onSelected,
+    this.labelsOnly = false,
   });
 
   final List<NavigationDockDestination> destinations;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+
+  /// Text-only segmented controls share the dock's lens and pointer physics.
+  final bool labelsOnly;
 
   @override
   State<FloatingNavigationBar> createState() => _FloatingNavigationBarState();
@@ -786,9 +795,11 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
   late final Listenable _hoverMotion = Listenable.merge([_hover, _hoverShow]);
   final List<_Spring> _parallax = [];
   bool _lifted = false;
+  bool _reduceMotion = false;
   int? _pointer;
   int? _pressedIndex;
   double _pressX = 0;
+  double _pressY = 0;
   bool _dragging = false;
   bool _dropping = false;
   VelocityTracker? _tracker;
@@ -797,12 +808,21 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
 
   int get _lastIndex => math.max(0, widget.destinations.length - 1);
 
-  int get _selectedIndex => widget.selectedIndex.clamp(0, _lastIndex);
+  int get _selectedIndex => widget.labelsOnly && widget.selectedIndex < 0
+      ? -1
+      : widget.selectedIndex.clamp(0, _lastIndex);
 
-  ({double pitch, double lens, double inset}) get _layout => _dockLayout(
-    context.size!.width - _barPadding * 2,
-    widget.destinations.length,
-  );
+  ({double pitch, double lens, double inset}) _layoutOf(double span) =>
+      widget.labelsOnly
+      ? (
+          pitch: span / widget.destinations.length,
+          lens: span / widget.destinations.length,
+          inset: 0,
+        )
+      : _dockLayout(span, widget.destinations.length);
+
+  ({double pitch, double lens, double inset}) get _layout =>
+      _layoutOf(context.size!.width - _barPadding * 2);
 
   @override
   void initState() {
@@ -817,6 +837,26 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
     _glowSpread.addListener(_shine);
     _hoverAt.addListener(_leanContent);
     _syncParallax();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    for (final spring in [
+      _lens,
+      _lift,
+      _hover,
+      _hoverShow,
+      _swell,
+      _stretch,
+      _jelly,
+      _glow,
+      _glowSpread,
+      ..._parallax,
+    ]) {
+      spring.disabled = _reduceMotion;
+    }
   }
 
   @override
@@ -878,7 +918,7 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
       _parallax.removeLast().dispose();
     }
     while (_parallax.length < count) {
-      _parallax.add(_Spring(this, 0));
+      _parallax.add(_Spring(this, 0)..disabled = _reduceMotion);
     }
   }
 
@@ -1017,6 +1057,16 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
 
   void _handlePointerMove(PointerMoveEvent event) {
     if (event.pointer == _pointer) {
+      // A segment row lives in a scrollable page; a vertical swipe scrolls
+      // the page without committing whichever segment it started over.
+      if (widget.labelsOnly &&
+          !_dragging &&
+          (event.localPosition.dy - _pressY).abs() > kTouchSlop &&
+          (event.localPosition.dy - _pressY).abs() >
+              (event.localPosition.dx - _pressX).abs()) {
+        _handlePointerEnd(event);
+        return;
+      }
       _tracker?.addPosition(event.timeStamp, event.localPosition);
       _glowAt = event.localPosition;
       _shine();
@@ -1052,6 +1102,7 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
     final index = _indexAt(_positionAt(localPosition));
     _pressedIndex = index;
     _pressX = localPosition.dx;
+    _pressY = localPosition.dy;
     _dragging = false;
     _dropping = false;
     _lift.springTo(1, _liftSpring);
@@ -1129,8 +1180,8 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
     final colorScheme = context.colorScheme;
     final labelStyle = AppTextStyle.custom(
       context,
-      size: _labelSize,
-      leading: _labelLeading,
+      size: widget.labelsOnly ? 14 : _labelSize,
+      leading: widget.labelsOnly ? 19.6 : _labelLeading,
       weight: FontWeight.w500,
     );
     final labels = [
@@ -1176,10 +1227,7 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
               child: RepaintBoundary(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final layout = _dockLayout(
-                      constraints.maxWidth,
-                      widget.destinations.length,
-                    );
+                    final layout = _layoutOf(constraints.maxWidth);
                     final room = layout.pitch - _labelInset * 2;
                     final labelScale = widest <= room
                         ? 1.0
@@ -1210,8 +1258,11 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
                                 parallax: _parallax[index],
                                 lift: _lift,
                                 labelStyle: labelStyle.copyWith(
-                                  fontSize: _labelSize * labelScale,
+                                  fontSize:
+                                      (widget.labelsOnly ? 14 : _labelSize) *
+                                      labelScale,
                                 ),
+                                labelsOnly: widget.labelsOnly,
                                 labelHeight: lineHeight,
                                 labelOverflows:
                                     labels[index].width * labelScale > room,
@@ -1221,12 +1272,16 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
                         ],
                       ),
                     );
-                    final lensed =
-                        glass && _lifted && widget.destinations.isNotEmpty;
+                    final hasLens =
+                        widget.destinations.isNotEmpty &&
+                        (_selectedIndex >= 0 ||
+                            _pressedIndex != null ||
+                            _lifted);
+                    final lensed = glass && _lifted && hasLens;
                     return Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        if (widget.destinations.isNotEmpty)
+                        if (hasLens)
                           AnimatedBuilder(
                             animation: _motion,
                             builder: (_, _) => _Lens(
@@ -1247,7 +1302,7 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
                               opacity: _hoverShow.value,
                             ),
                           ),
-                        if (glass && widget.destinations.isNotEmpty)
+                        if (glass && hasLens)
                           AnimatedBuilder(
                             animation: _motion,
                             builder: (_, _) =>
@@ -1504,6 +1559,7 @@ class _FloatingBarItem extends StatefulWidget {
     required this.labelHeight,
     required this.labelOverflows,
     required this.onActivate,
+    required this.labelsOnly,
   });
 
   final NavigationDockDestination destination;
@@ -1522,6 +1578,7 @@ class _FloatingBarItem extends StatefulWidget {
   final double labelHeight;
   final bool labelOverflows;
   final VoidCallback onActivate;
+  final bool labelsOnly;
 
   @override
   State<_FloatingBarItem> createState() => _FloatingBarItemState();
@@ -1569,13 +1626,15 @@ class _FloatingBarItemState extends State<_FloatingBarItem> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            GlyphIcon(
-              widget.destination.glyph,
-              size: _iconSize,
-              color: color,
-              fill: 1,
-            ),
-            const SizedBox(height: _labelGap),
+            if (!widget.labelsOnly) ...[
+              GlyphIcon(
+                widget.destination.glyph,
+                size: _iconSize,
+                color: color,
+                fill: 1,
+              ),
+              const SizedBox(height: _labelGap),
+            ],
             SizedBox(
               height: widget.labelHeight,
               child: Center(

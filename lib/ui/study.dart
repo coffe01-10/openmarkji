@@ -103,6 +103,8 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
       canPop: !_busy,
       child: Scaffold(
         appBar: AppBar(
+          clipBehavior: Clip.none,
+          leading: _appearanceBack(context),
           title: Text(finished ? '今日完成' : title),
           actions: [
             if (card != null) _FavoriteButton(store: widget.store, card: card),
@@ -543,17 +545,24 @@ class _CardPage extends StatelessWidget {
         final c = Theme.of(context).colorScheme;
         return Scaffold(
           appBar: AppBar(
+            clipBehavior: Clip.none,
+            leading: _appearanceBack(context),
             title: const Text('卡片详情'),
             actions: [
-              _FavoriteButton(store: store, card: card),
-              IconButton(
-                tooltip: '编辑卡片',
-                onPressed: () => _push(
-                  context,
-                  _EditorPage(store: store, deck: data.deck, card: card),
-                ),
-                icon: const Icon(Icons.edit_outlined),
+              _GlassToolbar(
+                children: [
+                  _FavoriteButton(store: store, card: card, grouped: true),
+                  IconButton(
+                    tooltip: '编辑卡片',
+                    onPressed: () => _push(
+                      context,
+                      _EditorPage(store: store, deck: data.deck, card: card),
+                    ),
+                    icon: const Icon(Icons.edit_outlined),
+                  ),
+                ],
               ),
+              const SizedBox(width: 16),
             ],
           ),
           body: Center(

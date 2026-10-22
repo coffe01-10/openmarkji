@@ -50,7 +50,7 @@ final _flatProfile = List<double>.unmodifiable(
 /// How much of iOS's glass the panes draw (.agents/architecture.md).
 enum LiquidGlassQuality { standard, ultra }
 
-/// Whether the navigation dock and the buttons of a page's bar are glass.
+/// Shared glass quality and material for navigation, controls and menus.
 class LiquidGlassScope extends InheritedWidget {
   const LiquidGlassScope({
     super.key,
@@ -66,8 +66,29 @@ class LiquidGlassScope extends InheritedWidget {
   final double dockOpacity, dockBlur;
 
   static LiquidGlassStyle dockStyleOf(BuildContext context) {
+    return _materialStyleOf(
+      context,
+      LiquidGlassStyle.pill(Theme.of(context).colorScheme),
+    );
+  }
+
+  static LiquidGlassStyle controlStyleOf(BuildContext context) =>
+      _materialStyleOf(
+        context,
+        LiquidGlassStyle.regular(Theme.of(context).colorScheme),
+      );
+
+  static LiquidGlassStyle menuStyleOf(BuildContext context) => _materialStyleOf(
+    context,
+    LiquidGlassStyle.menu(Theme.of(context).colorScheme),
+  );
+
+  static LiquidGlassStyle _materialStyleOf(
+    BuildContext context,
+    LiquidGlassStyle base,
+  ) {
     final scope = _of(context);
-    return LiquidGlassStyle.pill(Theme.of(context).colorScheme).copyWith(
+    return base.copyWith(
       tintOpacity: scope?.dockOpacity ?? .58,
       blur: scope?.dockBlur ?? 16,
       hazeBlur: scope?.dockBlur ?? 16,

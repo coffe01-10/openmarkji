@@ -1,9 +1,14 @@
 part of 'app.dart';
 
 class _FavoriteButton extends StatefulWidget {
-  const _FavoriteButton({required this.store, required this.card});
+  const _FavoriteButton({
+    required this.store,
+    required this.card,
+    this.grouped = false,
+  });
   final AppStore store;
   final StudyCard card;
+  final bool grouped;
   @override
   State<_FavoriteButton> createState() => _FavoriteButtonState();
 }
@@ -21,8 +26,8 @@ class _FavoriteButtonState extends State<_FavoriteButton> {
   }
 
   @override
-  Widget build(BuildContext context) => ElasticButton(
-    child: IconButton(
+  Widget build(BuildContext context) {
+    final button = IconButton(
       tooltip: _favorite ? '取消收藏' : '收藏卡片',
       isSelected: _favorite,
       selectedIcon: const Icon(Icons.star_rounded),
@@ -42,8 +47,9 @@ class _FavoriteButtonState extends State<_FavoriteButton> {
                 if (mounted) setState(() => _busy = false);
               }
             }),
-    ),
-  );
+    );
+    return widget.grouped ? button : ElasticButton(child: button);
+  }
 }
 
 class _PracticeSetupPage extends StatefulWidget {

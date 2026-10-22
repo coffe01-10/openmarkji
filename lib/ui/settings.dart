@@ -37,54 +37,38 @@ class _SettingsPage extends StatelessWidget {
     ];
     return ColoredBox(
       color: _settingsCanvas(scheme),
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 132),
-            children: [
-              Text(
-                '设置',
-                style: TextStyle(
-                  fontSize: 34,
-                  height: 1.15,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.6,
-                  color: scheme.onSurface,
-                ),
+      child: _PinnedPage(
+        backgroundColor: _settingsCanvas(scheme),
+        title: '设置',
+        maxWidth: 720,
+        horizontalPadding: 16,
+        children: [
+          for (final group in [
+            (title: '偏好设置', items: entries.take(4).toList()),
+            (title: '更多', items: entries.skip(4).toList()),
+          ]) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 28, 16, 12),
+              child: Text(
+                group.title,
+                style: TextStyle(fontSize: 14, color: scheme.onSurfaceVariant),
               ),
-              for (final group in [
-                (title: '偏好设置', items: entries.take(4).toList()),
-                (title: '更多', items: entries.skip(4).toList()),
-              ]) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 28, 16, 12),
-                  child: Text(
-                    group.title,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: scheme.onSurfaceVariant,
-                    ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < group.items.length; i++)
+                  _SettingsLink(
+                    icon: group.items[i].icon,
+                    title: group.items[i].title,
+                    page: group.items[i].page,
+                    radius: _settingsRowRadius(i, group.items.length),
+                    divided: i != group.items.length - 1,
                   ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    for (var i = 0; i < group.items.length; i++)
-                      _SettingsLink(
-                        icon: group.items[i].icon,
-                        title: group.items[i].title,
-                        page: group.items[i].page,
-                        radius: _settingsRowRadius(i, group.items.length),
-                        divided: i != group.items.length - 1,
-                      ),
-                  ],
-                ),
               ],
-            ],
-          ),
-        ),
+            ),
+          ],
+        ],
       ),
     );
   }

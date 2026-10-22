@@ -14,7 +14,7 @@ Widget _appearanceBack(BuildContext context) => Center(
       tooltip: MaterialLocalizations.of(context).backButtonTooltip,
       style: LiquidGlassScope.of(context)
           ? LiquidGlass.buttonStyle(
-              (_) => LiquidGlassStyle.regular(Theme.of(context).colorScheme),
+              (_) => LiquidGlassScope.controlStyleOf(context),
             )
           : null,
       onPressed: () => Navigator.of(context).maybePop(),
@@ -48,7 +48,7 @@ class _AppearancePageState extends State<_AppearancePage> {
   }
 
   void _save(void Function(Preferences) update) => _action(context, () async {
-    update(widget.store.preferences);
+    widget.store.updatePreferences(update);
     await widget.store.savePreferences();
   });
 
@@ -210,19 +210,21 @@ class _AppearancePageState extends State<_AppearancePage> {
                 ],
                 onChanged: (value) => _save((p) => p.liquidGlass = value),
               ),
-              _AppearanceHeader('Dock 玻璃质感', Icons.opacity_rounded),
+              _AppearanceHeader('全局玻璃质感', Icons.opacity_rounded),
               _AppearanceCard(
                 child: Column(
                   children: [
-                    _DockMaterialPreview(preferences: p),
+                    _GlassMaterialPreview(preferences: p),
                     _PreferenceSlider(
                       title: '透明度',
                       value: 1 - p.dockOpacity,
                       max: 1,
                       divisions: 20,
                       label: '${((1 - p.dockOpacity) * 100).round()}%',
-                      enabled: p.liquidGlass != 'none' && p.floatingNavigation,
-                      onChanged: (v) => setState(() => p.dockOpacity = 1 - v),
+                      enabled: p.liquidGlass != 'none',
+                      onChanged: (v) => widget.store.updatePreferences(
+                        (p) => p.dockOpacity = 1 - v,
+                      ),
                       onChangeEnd: (_) =>
                           _action(context, widget.store.savePreferences),
                     ),
@@ -232,17 +234,18 @@ class _AppearancePageState extends State<_AppearancePage> {
                       max: 30,
                       divisions: 30,
                       label: '${p.dockBlur.round()}',
-                      enabled: p.liquidGlass != 'none' && p.floatingNavigation,
-                      onChanged: (v) => setState(() => p.dockBlur = v),
+                      enabled: p.liquidGlass != 'none',
+                      onChanged: (v) =>
+                          widget.store.updatePreferences((p) => p.dockBlur = v),
                       onChangeEnd: (_) =>
                           _action(context, widget.store.savePreferences),
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: Text(
-                        p.liquidGlass == 'none' || !p.floatingNavigation
-                            ? '启用悬浮导航与液态玻璃后可调节'
-                            : '透明度越高，背景越通透；模糊越高，背景细节越柔和。',
+                        p.liquidGlass == 'none'
+                            ? '启用液态玻璃后可调节，统一应用于导航、切换栏、按钮、搜索框和菜单。'
+                            : '导航、切换栏、按钮、搜索框和菜单同步生效。透明度越高越通透，模糊越高背景越柔和。',
                         style: TextStyle(
                           fontSize: 12,
                           color: c.onSurfaceVariant,
@@ -799,12 +802,18 @@ class _AppearanceMenu extends StatelessWidget {
   );
 }
 
-class _DockMaterialPreview extends StatelessWidget {
-  const _DockMaterialPreview({required this.preferences});
+class _GlassMaterialPreview extends StatefulWidget {
+  const _GlassMaterialPreview({required this.preferences});
   final Preferences preferences;
   @override
+  State<_GlassMaterialPreview> createState() => _GlassMaterialPreviewState();
+}
+
+class _GlassMaterialPreviewState extends State<_GlassMaterialPreview> {
+  int _selected = 0;
+  @override
   Widget build(BuildContext context) {
-    final p = preferences;
+    final p = widget.preferences;
     final c = Theme.of(context).colorScheme;
     return LiquidGlassScope(
       enabled: p.liquidGlass != 'none',
@@ -824,10 +833,50 @@ class _DockMaterialPreview extends StatelessWidget {
             ],
           ),
         ),
-        child: NavigationDock(
-          destinations: _navigationDestinations,
-          selectedIndex: 0,
-          onSelected: (_) {},
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            children: [
+              _GlassSegments<int>(
+                options: {
+                  for (var i = 0; i < _navigationDestinations.length; i++)
+                    i: _navigationDestinations[i].label,
+                },
+                value: _selected,
+                stretch: true,
+                onChanged: (value) => setState(() => _selected = value),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text('按住滑动预览', style: TextStyle(fontSize: 12)),
+                  ),
+                  _GlassToolbar(
+                    children: [
+                      IconButton(
+                        tooltip: '预览上一项',
+                        onPressed: () =>
+                            setState(() => _selected = (_selected + 3) % 4),
+                        icon: const Icon(Icons.chevron_left_rounded),
+                      ),
+                      IconButton(
+                        tooltip: '预览下一项',
+                        onPressed: () =>
+                            setState(() => _selected = (_selected + 1) % 4),
+                        icon: const Icon(Icons.chevron_right_rounded),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              NavigationDock(
+                destinations: _navigationDestinations,
+                selectedIndex: _selected,
+                onSelected: (value) => setState(() => _selected = value),
+              ),
+            ],
+          ),
         ),
       ),
     );
