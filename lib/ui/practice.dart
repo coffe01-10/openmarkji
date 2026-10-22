@@ -69,9 +69,23 @@ class _PracticeSetupPageState extends State<_PracticeSetupPage> {
   late String _focus = widget.focus ?? 'all';
   String _limit = '20';
   bool _shuffle = true, _busy = false;
+  late Future<PracticeSession?> _session = widget.store.practiceSession();
+  late Future<List<StudyCard>> _preview = _previewCards();
+
+  Future<List<StudyCard>> _previewCards() => widget.store.cards(
+    deckId: widget.deck.id,
+    focus: _focus,
+    limit: int.parse(_limit),
+  );
+
   Future<void> _open() async {
     await _push(context, _PracticePage(store: widget.store));
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {
+        _session = widget.store.practiceSession();
+        _preview = _previewCards();
+      });
+    }
   }
 
   @override
@@ -81,24 +95,27 @@ class _PracticeSetupPageState extends State<_PracticeSetupPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _AppearanceHeader(widget.deck.name, Icons.school_outlined),
-        _Load(
-          future: widget.store.practiceSession(),
-          builder: (session) =>
-              session == null ||
-                  (session.deckId != widget.deck.id && session.queue.isEmpty)
-              ? const SizedBox.shrink()
-              : Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: _AppearanceCard(
-                    child: _supportTile(
-                      Icons.play_circle_outline_rounded,
-                      session.queue.isEmpty ? '查看上次练习结果' : '继续上次练习',
-                      _open,
-                      subtitle:
-                          '已掌握 ${session.completed} / ${session.total} 张 · 新一轮会替换这份进度',
+        FutureBuilder<PracticeSession?>(
+          future: _session,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) return Text('加载失败：${snapshot.error}');
+            final session = snapshot.data;
+            return session == null ||
+                    (session.deckId != widget.deck.id && session.queue.isEmpty)
+                ? const SizedBox.shrink()
+                : Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: _AppearanceCard(
+                      child: _supportTile(
+                        Icons.play_circle_outline_rounded,
+                        session.queue.isEmpty ? '查看上次练习结果' : '继续上次练习',
+                        _open,
+                        subtitle:
+                            '已掌握 ${session.completed} / ${session.total} 张 · 新一轮会替换这份进度',
+                      ),
                     ),
-                  ),
-                ),
+                  );
+          },
         ),
         _AppearanceCard(
           child: Column(
@@ -111,13 +128,19 @@ class _PracticeSetupPageState extends State<_PracticeSetupPage> {
                   'favorite': '收藏卡片',
                   'difficult': '最近难卡',
                 },
-                onChanged: (v) => setState(() => _focus = v),
+                onChanged: (v) => setState(() {
+                  _focus = v;
+                  _preview = _previewCards();
+                }),
               ),
               _AppearanceMenu(
                 title: '本轮数量',
                 value: _limit,
                 options: const {'10': '10 张', '20': '20 张', '50': '50 张'},
-                onChanged: (v) => setState(() => _limit = v),
+                onChanged: (v) => setState(() {
+                  _limit = v;
+                  _preview = _previewCards();
+                }),
               ),
               SwitchListTile(
                 title: const Text('随机顺序'),
@@ -130,11 +153,7 @@ class _PracticeSetupPageState extends State<_PracticeSetupPage> {
         ),
         const SizedBox(height: 18),
         _Load(
-          future: widget.store.cards(
-            deckId: widget.deck.id,
-            focus: _focus,
-            limit: int.parse(_limit),
-          ),
+          future: _preview,
           builder: (cards) => Text(
             cards.isEmpty
                 ? '当前范围没有卡片。可先收藏重点卡片，或完成一次正式学习。'

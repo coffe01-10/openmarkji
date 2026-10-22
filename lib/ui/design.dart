@@ -423,7 +423,8 @@ class _BrandMark extends StatelessWidget {
 class _PinnedPage extends StatefulWidget {
   const _PinnedPage({
     required this.title,
-    required this.children,
+    this.children = const [],
+    this.slivers,
     this.toolbar,
     this.backgroundColor,
     this.maxWidth = 1120,
@@ -431,6 +432,7 @@ class _PinnedPage extends StatefulWidget {
   });
   final String title;
   final List<Widget> children;
+  final List<Widget>? slivers;
   final Widget? toolbar;
   final Color? backgroundColor;
   final double maxWidth, horizontalPadding;
@@ -457,17 +459,34 @@ class _PinnedPageState extends State<_PinnedPage> {
         constraints: BoxConstraints(maxWidth: widget.maxWidth),
         child: Stack(
           children: [
-            ListView(
-              key: PageStorageKey('page-${widget.title}'),
-              controller: _scroll,
-              padding: EdgeInsets.fromLTRB(
-                widget.horizontalPadding,
-                headerHeight + 16,
-                widget.horizontalPadding,
-                132,
+            if (widget.slivers != null)
+              CustomScrollView(
+                key: PageStorageKey('page-${widget.title}'),
+                controller: _scroll,
+                slivers: [
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      widget.horizontalPadding,
+                      headerHeight + 16,
+                      widget.horizontalPadding,
+                      132,
+                    ),
+                    sliver: SliverMainAxisGroup(slivers: widget.slivers!),
+                  ),
+                ],
+              )
+            else
+              ListView(
+                key: PageStorageKey('page-${widget.title}'),
+                controller: _scroll,
+                padding: EdgeInsets.fromLTRB(
+                  widget.horizontalPadding,
+                  headerHeight + 16,
+                  widget.horizontalPadding,
+                  132,
+                ),
+                children: widget.children,
               ),
-              children: widget.children,
-            ),
             Positioned(
               top: 0,
               left: 0,

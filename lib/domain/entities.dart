@@ -19,10 +19,11 @@ class DeckData {
     this.algorithm = 6,
     this.params = const [],
     this.chapters = const [],
+    this.sortOrder = 0,
   });
   final String id;
   final String name, description, group;
-  final int newLimit, algorithm;
+  final int newLimit, algorithm, sortOrder;
   final List<double> params;
   final List<String> chapters;
   Map<String, dynamic> toJson() => {
@@ -34,6 +35,7 @@ class DeckData {
     'algorithm': algorithm,
     'params': params,
     'chapters': chapters,
+    'sortOrder': sortOrder,
   };
   factory DeckData.fromJson(Map<String, dynamic> j) => DeckData(
     id: j['id'],
@@ -46,6 +48,7 @@ class DeckData {
         .map((e) => (e as num).toDouble())
         .toList(),
     chapters: List<String>.from(j['chapters'] ?? []),
+    sortOrder: j['sortOrder'] ?? 0,
   );
 }
 

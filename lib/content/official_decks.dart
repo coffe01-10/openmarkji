@@ -45,6 +45,9 @@ const officialDecks = <OfficialDeck>[
   ),
 ];
 
+bool isOfficialContentDeck(String id) =>
+    id == officialLibraryDeckId || officialDeckById(id) != null;
+
 OfficialDeck? officialDeckById(String id) {
   for (final deck in officialDecks) {
     if (deck.id == id) return deck;

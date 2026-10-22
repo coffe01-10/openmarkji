@@ -204,20 +204,9 @@ class AppStore extends ChangeNotifier {
       if (deck.id == officialLibraryDeckId) continue;
       indexed.add((order: i, deck: deck));
     }
-    final officialOrder = {
-      for (var i = 0; i < officialDecks.length; i++) officialDecks[i].id: i,
-    };
     indexed.sort((a, b) {
-      final group = (a.deck.group == officialDeckGroup ? 1 : 0).compareTo(
-        b.deck.group == officialDeckGroup ? 1 : 0,
-      );
-      if (group != 0) return group;
-      if (a.deck.group == officialDeckGroup) {
-        return (officialOrder[a.deck.id] ?? 0).compareTo(
-          officialOrder[b.deck.id] ?? 0,
-        );
-      }
-      return a.order.compareTo(b.order);
+      final order = a.deck.sortOrder.compareTo(b.deck.sortOrder);
+      return order != 0 ? order : a.order.compareTo(b.order);
     });
     return indexed.map((entry) => entry.deck).toList();
   }
@@ -437,6 +426,14 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> deleteCards(Iterable<String> ids) async {
+    final official = <String>{};
+    for (final id in ids) {
+      final current = await card(id);
+      if (current != null && isOfficialContentDeck(current.deckId)) {
+        official.add(id);
+      }
+    }
+    if (official.isNotEmpty) throw StateError('官方卡片不能删除');
     await db.transaction(() async {
       for (final id in ids) {
         await db.customStatement('DELETE FROM cards WHERE id=?', [id]);
@@ -450,7 +447,33 @@ class AppStore extends ChangeNotifier {
     changed();
   }
 
+  Future<void> reorderDecks(List<String> ids) async {
+    final current = await decks();
+    final ranked = <String, int>{};
+    var next = 0;
+    for (final id in ids) {
+      if (current.any((deck) => deck.id == id)) ranked[id] = next++;
+    }
+    for (final deck in current) {
+      ranked.putIfAbsent(deck.id, () => next++);
+    }
+    await db.transaction(() async {
+      for (final deck in current) {
+        final order = ranked[deck.id]!;
+        if (deck.sortOrder == order) continue;
+        await putDeck(
+          DeckData.fromJson({...deck.toJson(), 'sortOrder': order}),
+          announce: false,
+        );
+      }
+    });
+    changed();
+  }
+
   Future<void> deleteDeck(String id) async {
+    if (isOfficialContentDeck(id)) {
+      throw StateError('官方牌组不能删除');
+    }
     await db.transaction(() async {
       await db.customStatement(
         'DELETE FROM reviews WHERE card_id IN (SELECT card_id FROM card_decks WHERE deck_id=? AND card_id NOT IN (SELECT card_id FROM card_decks WHERE deck_id!=?))',
@@ -1199,7 +1222,12 @@ class AppStore extends ChangeNotifier {
       });
       changedDecks = true;
     }
-    for (final official in officialDecks) {
+    final placed = await decks();
+    var nextOrder = placed.isEmpty
+        ? officialDecks.length
+        : placed.map((deck) => deck.sortOrder).reduce(math.max) + 1;
+    for (var index = 0; index < officialDecks.length; index++) {
+      final official = officialDecks[index];
       final existing = await deck(official.id);
       if (existing == null ||
           existing.group != officialDeckGroup ||
@@ -1214,6 +1242,7 @@ class AppStore extends ChangeNotifier {
             algorithm: existing?.algorithm ?? preferences.defaultAlgorithm,
             params: existing?.params ?? const [],
             chapters: existing?.chapters ?? const [],
+            sortOrder: existing?.sortOrder ?? nextOrder++,
           ),
           announce: false,
         );

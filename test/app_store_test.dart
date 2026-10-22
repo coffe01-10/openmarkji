@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,6 +35,51 @@ void main() {
       enrolledAt: now,
     ),
   );
+
+  test('牌组顺序落库，旧数据保留原顺序，备份恢复和重新初始化不丢失', () async {
+    for (final id in ['a', 'b']) {
+      await store.putDeck(DeckData.fromJson({'id': id, 'name': id}));
+    }
+    expect((await store.decks()).map((d) => d.id), ['d', 'a', 'b']);
+    await store.reorderDecks(['b', 'd', 'a']);
+    final backup = await store.backup();
+    await store.reorderDecks(['a', 'b', 'd']);
+    await store.restore(backup);
+    await store.initialize(legacy: {});
+    expect((await store.decks()).map((d) => d.id), ['b', 'd', 'a']);
+    expect((await store.decks()).map((d) => d.sortOrder), [0, 1, 2]);
+  });
+
+  test('官方牌组和共享卡片拒绝删除，普通牌组仍可删除', () async {
+    await add('user-card');
+    for (final id in [
+      officialLibraryDeckId,
+      ...officialDecks.map((d) => d.id),
+    ]) {
+      await store.putDeck(DeckData(id: id, name: '改过名称', group: '自定义'));
+      await expectLater(store.deleteDeck(id), throwsStateError);
+      expect(await store.deck(id), isNotNull);
+    }
+    await store.putCard(
+      StudyCard(
+        id: 'official-card',
+        deckId: officialLibraryDeckId,
+        source: '官方内容',
+        createdAt: now,
+      ),
+    );
+    await expectLater(
+      store.deleteCards(['user-card', 'official-card']),
+      throwsStateError,
+    );
+    expect(await store.card('user-card'), isNotNull);
+    expect(await store.card('official-card'), isNotNull);
+    await store.putDeck(DeckData(id: 'd', name: '自建牌组', group: '官方'));
+    await store.deleteDeck('d');
+    expect(await store.deck('d'), isNull);
+    expect(await store.card('user-card'), isNull);
+    expect(await store.card('official-card'), isNotNull);
+  });
 
   test('外观选项保存后可恢复，旧设置保留默认值', () async {
     store.preferences
@@ -305,6 +349,10 @@ void main() {
       'official-toefl',
     ]);
     expect(visible.any((d) => d.id == officialLibraryDeckId), isFalse);
+    final reordered = visible.reversed.map((d) => d.id).toList();
+    await store.reorderDecks(reordered);
+    await store.initialize(legacy: {});
+    expect((await store.decks()).map((d) => d.id), reordered);
   });
 
   test('旧 JSON 一次性迁移，保持 ID 和评分映射', () async {

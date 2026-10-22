@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -16,6 +18,33 @@ import 'package:openmarkji/ui/glass/liquid_glass.dart';
 import 'package:openmarkji/ui/glass/navigation_dock.dart';
 import 'package:openmarkji/ui/glass/popup.dart';
 
+// 挂起真实的异步读写，让拖拽中的加载闪帧和写入前回跳可稳定复现。
+class _InteractionStore extends AppStore {
+  _InteractionStore(super.db) : super(loadOfficialDecks: false);
+  int countQueries = 0, sessionQueries = 0;
+  Completer<void>? countGate, reorderGate;
+  final reorderGates = <Completer<void>>[];
+  @override
+  Future<Map<String, int>> counts(String deckId) async {
+    countQueries++;
+    await countGate?.future;
+    return super.counts(deckId);
+  }
+
+  @override
+  Future<void> reorderDecks(List<String> ids) async {
+    final gate = reorderGates.isEmpty ? reorderGate : reorderGates.removeAt(0);
+    await gate?.future;
+    await super.reorderDecks(ids);
+  }
+
+  @override
+  Future<PracticeSession?> practiceSession() {
+    sessionQueries++;
+    return super.practiceSession();
+  }
+}
+
 void main() {
   late AppStore store;
   setUp(() async {
@@ -28,6 +57,297 @@ void main() {
   tearDown(() async {
     store.dispose();
     await store.db.close();
+  });
+
+  Future<_InteractionStore> observedStore() async {
+    store.dispose();
+    await store.db.close();
+    final observed = _InteractionStore(AppDatabase(NativeDatabase.memory()));
+    store = observed;
+    await store.initialize(legacy: {});
+    return observed;
+  }
+
+  testWidgets('拖拽原位释放和异步保存期间每帧保持牌组高度、计数和目标顺序', (tester) async {
+    final observed = await observedStore();
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    for (final id in ['a', 'b', 'c']) {
+      await store.putDeck(DeckData(id: id, name: '稳定$id'));
+    }
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('牌组').last);
+    await tester.pumpAndSettle();
+    Finder tile(String id) => find
+        .ancestor(of: find.text('稳定$id'), matching: find.byType(InkWell))
+        .first;
+    final height = tester.getSize(tile('a')).height;
+    final initialY = tester.getTopLeft(tile('a')).dy;
+    final countQueries = observed.countQueries;
+    observed.countGate = Completer<void>();
+    observed.reorderGate = Completer<void>();
+    addTearDown(() {
+      if (!observed.countGate!.isCompleted) observed.countGate!.complete();
+      if (!observed.reorderGate!.isCompleted) observed.reorderGate!.complete();
+    });
+
+    void stableFrame() {
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(tester.getSize(tile('a')).height, height);
+      expect(find.textContaining('0 张卡片'), findsNWidgets(3));
+      expect(tester.takeException(), isNull);
+    }
+
+    final start = tester.getCenter(tile('a'));
+    final stationary = await tester.startGesture(start);
+    await tester.pump(const Duration(milliseconds: 600));
+    stableFrame();
+    await stationary.moveBy(const Offset(0, 24));
+    await tester.pump(const Duration(milliseconds: 100));
+    await stationary.moveTo(start);
+    await stationary.up();
+    for (var frame = 0; frame < 25; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      stableFrame();
+    }
+    expect(tester.getTopLeft(tile('a')).dy, initialY);
+    expect(observed.countQueries, countQueries);
+
+    final target = tester.getBottomLeft(tile('c')).dy + 20;
+    final moving = await tester.startGesture(start);
+    await tester.pump(const Duration(milliseconds: 600));
+    for (var step = 1; step <= 14; step++) {
+      await moving.moveTo(
+        Offset.lerp(start, Offset(start.dx, target), step / 14)!,
+      );
+      await tester.pump(const Duration(milliseconds: 40));
+      stableFrame();
+    }
+    expect(observed.countQueries, countQueries);
+    await moving.up();
+    for (var frame = 0; frame < 30; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      stableFrame();
+      expect(
+        tester.getTopLeft(tile('a')).dy,
+        greaterThan(tester.getTopLeft(tile('b')).dy),
+      );
+    }
+    // 写入仍被挂起时，界面已经稳定停在新位置。
+    expect((await store.decks()).map((d) => d.id), ['a', 'b', 'c']);
+    observed.reorderGate!.complete();
+    await tester.pumpAndSettle();
+    observed.countGate!.complete();
+    await tester.pumpAndSettle();
+    expect((await store.decks()).map((d) => d.id), ['b', 'c', 'a']);
+    stableFrame();
+
+    // 第一笔写入尚未完成就拖回原顺序，旧写入的刷新不能覆盖第二次落点。
+    final firstWrite = Completer<void>(), secondWrite = Completer<void>();
+    observed.reorderGates.addAll([firstWrite, secondWrite]);
+    addTearDown(() {
+      if (!firstWrite.isCompleted) firstWrite.complete();
+      if (!secondWrite.isCompleted) secondWrite.complete();
+    });
+    Future<void> dragA(double targetY) async {
+      final origin = tester.getCenter(tile('a'));
+      final gesture = await tester.startGesture(origin);
+      await tester.pump(const Duration(milliseconds: 600));
+      for (var step = 1; step <= 14; step++) {
+        await gesture.moveTo(
+          Offset.lerp(origin, Offset(origin.dx, targetY), step / 14)!,
+        );
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    await dragA(tester.getTopLeft(tile('b')).dy - 20);
+    await dragA(tester.getBottomLeft(tile('c')).dy + 20);
+    firstWrite.complete();
+    await tester.pumpAndSettle();
+    expect((await store.decks()).map((d) => d.id), ['a', 'b', 'c']);
+    for (var frame = 0; frame < 25; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      stableFrame();
+      expect(
+        tester.getTopLeft(tile('a')).dy,
+        greaterThan(tester.getTopLeft(tile('c')).dy),
+      );
+    }
+    secondWrite.complete();
+    await tester.pumpAndSettle();
+    expect((await store.decks()).map((d) => d.id), ['b', 'c', 'a']);
+    await store.importCards('a', ['新卡']);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('1 张卡片'), findsOneWidget);
+  });
+
+  testWidgets('专项练习切换数量、范围及随机顺序时没有加载闪帧或表单位移', (tester) async {
+    final observed = await observedStore();
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await store.putDeck(DeckData(id: 'practice', name: '稳定练习'));
+    await store.importCards('practice', List.generate(30, (i) => '内容$i'));
+    final favorite = (await store.cards(deckId: 'practice', limit: 1)).single;
+    await store.setFavorite(favorite.id, true);
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('牌组').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('稳定练习'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('专项练习'));
+    await tester.pumpAndSettle();
+    final position = tester.getTopLeft(find.text('练习范围'));
+    final sessionQueries = observed.sessionQueries;
+    Future<void> checkFrames() async {
+      for (var frame = 0; frame < 35; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        expect(tester.getTopLeft(find.text('练习范围')), position);
+        expect(tester.takeException(), isNull);
+      }
+    }
+
+    await tester.tap(find.text('20 张'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('10 张'));
+    await checkFrames();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('本轮将练习 10 张卡片'), findsOneWidget);
+    await tester.tap(find.text('全部卡片'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('收藏卡片'));
+    await checkFrames();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('本轮将练习 1 张卡片'), findsOneWidget);
+    await tester.tap(find.byType(SwitchListTile));
+    await checkFrames();
+    expect(observed.sessionQueries, sessionQueries);
+  });
+
+  testWidgets('长按牌组拖到末尾、向上和原地松开，筛选排序保留其他牌组位置', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    for (final id in ['a', 'hidden', 'b', 'c']) {
+      await store.putDeck(
+        DeckData(id: id, name: '牌组$id', group: id == 'hidden' ? '其他' : '测试'),
+      );
+    }
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('牌组').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('测试'));
+    await tester.pumpAndSettle();
+
+    Future<void> move(String from, String to, {bool below = false}) async {
+      final start = tester.getCenter(find.text('牌组$from'));
+      final target = tester.getRect(
+        find.ancestor(
+          of: find.text('牌组$to'),
+          matching: find.byType(ReorderableDelayedDragStartListener),
+        ),
+      );
+      final gesture = await tester.startGesture(start);
+      await tester.pump(const Duration(milliseconds: 600));
+      final end = Offset(
+        start.dx,
+        below ? target.bottom + 20 : target.top - 20,
+      );
+      for (var step = 1; step <= 12; step++) {
+        await gesture.moveTo(Offset.lerp(start, end, step / 12)!);
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await tester.pumpAndSettle();
+      await gesture.up();
+      await tester.pumpAndSettle();
+    }
+
+    await move('a', 'c', below: true);
+    expect((await store.decks()).map((d) => d.id), ['b', 'hidden', 'c', 'a']);
+    await move('a', 'b');
+    expect((await store.decks()).map((d) => d.id), ['a', 'hidden', 'b', 'c']);
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('牌组b')),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect((await store.decks()).map((d) => d.id), ['a', 'hidden', 'b', 'c']);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('牌组长按拖到屏幕边缘会继续滚动长列表', (tester) async {
+    tester.view.physicalSize = const Size(390, 668);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    for (var i = 0; i < 10; i++) {
+      await store.putDeck(DeckData(id: '$i', name: '长列表$i'));
+    }
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('牌组').last);
+    await tester.pumpAndSettle();
+    final scroll = tester
+        .widget<CustomScrollView>(find.byType(CustomScrollView))
+        .controller!;
+    final start = tester.getCenter(find.text('长列表0'));
+    final gesture = await tester.startGesture(start);
+    await tester.pump(const Duration(milliseconds: 600));
+    for (var step = 1; step <= 12; step++) {
+      await gesture.moveTo(
+        Offset.lerp(start, Offset(start.dx, 650), step / 12)!,
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    for (var frame = 0; frame < 60; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(scroll.offset, greaterThan(100));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect((await store.decks()).first.id, isNot('0'));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('官方牌组菜单没有删除入口，自建牌组保留删除', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await store.putDeck(DeckData(id: 'official-cet4', name: '官方测试'));
+    await store.putDeck(DeckData(id: 'custom', name: '自建测试'));
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('牌组').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('官方测试'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('更多操作').first);
+    await tester.pumpAndSettle();
+    expect(find.text('新建章节'), findsOneWidget);
+    expect(find.text('删除牌组'), findsNothing);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithIcon(IconButton, Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('自建测试'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('更多操作').first);
+    await tester.pumpAndSettle();
+    expect(find.text('删除牌组'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('三个统计视图支持切换和日周月，窄屏大字体零数据不溢出', (tester) async {

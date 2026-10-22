@@ -1,5 +1,10 @@
 part of 'app.dart';
 
+typedef _LibraryData = ({
+  List<DeckData> decks,
+  Map<String, Map<String, int>> counts,
+});
+
 class _LibraryPage extends StatefulWidget {
   const _LibraryPage({required this.store});
   final AppStore store;
@@ -11,6 +16,48 @@ class _LibraryPageState extends State<_LibraryPage> {
   String _search = '';
   String? _group, _selected;
   bool _refreshing = false;
+  int? _dataRevision;
+  Future<_LibraryData>? _data;
+  List<String>? _order;
+  int _savingOrders = 0;
+
+  Future<_LibraryData> _libraryData() {
+    if (_data == null || _dataRevision != widget.store.revision) {
+      _dataRevision = widget.store.revision;
+      _data = _readLibraryData();
+    }
+    return _data!;
+  }
+
+  Future<_LibraryData> _readLibraryData() async {
+    final decks = await widget.store.decks();
+    final counts = await Future.wait([
+      for (final deck in decks) widget.store.counts(deck.id),
+    ]);
+    return (
+      decks: decks,
+      counts: {for (var i = 0; i < decks.length; i++) decks[i].id: counts[i]},
+    );
+  }
+
+  void _reorder(List<String> ids) {
+    final previous = _order;
+    _savingOrders++;
+    // 在落下的同一帧更新顺序，不等 SQLite 写入后再跳回目标位置。
+    setState(() => _order = ids);
+    _action(context, () async {
+      try {
+        await widget.store.reorderDecks(ids);
+      } catch (_) {
+        if (mounted && identical(_order, ids)) {
+          setState(() => _order = previous);
+        }
+        rethrow;
+      } finally {
+        _savingOrders--;
+      }
+    });
+  }
 
   Future<void> _refresh() async {
     setState(() => _refreshing = true);
@@ -29,8 +76,24 @@ class _LibraryPageState extends State<_LibraryPage> {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.store,
     builder: (context, _) => _Load(
-      future: widget.store.decks(),
-      builder: (decks) {
+      future: _libraryData(),
+      builder: (data) {
+        if (_savingOrders == 0 &&
+            listEquals(_order, data.decks.map((d) => d.id).toList())) {
+          _order = null;
+        }
+        final byId = {for (final deck in data.decks) deck.id: deck};
+        final decks = [
+          for (final id in _order ?? const <String>[]) ?byId.remove(id),
+          ...byId.values,
+        ];
+        final groups =
+            decks
+                .map((d) => d.group)
+                .where((g) => g.isNotEmpty)
+                .toSet()
+                .toList()
+              ..sort();
         final visible = decks
             .where(
               (d) =>
@@ -64,69 +127,66 @@ class _LibraryPageState extends State<_LibraryPage> {
               ],
             ),
           ),
-          children: [
-            Text(
-              '${decks.length} 副牌组',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+          slivers: [
+            SliverList.list(
+              children: [
+                Text(
+                  '${decks.length} 副牌组',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _GlassSegments<String?>(
+                  options: {null: '全部', for (final g in groups) g: g},
+                  value: _group,
+                  onChanged: (g) => setState(() => _group = g),
+                ),
+                const SizedBox(height: 20),
+                if (visible.isEmpty)
+                  _Empty(
+                    icon: Icons.layers_outlined,
+                    title: decks.isEmpty ? '把知识装进牌组' : '没有找到这个牌组',
+                    detail: decks.isEmpty
+                        ? '按科目或主题整理卡片，再选择想学习的内容。'
+                        : '试试其他关键词，或者切换分组。',
+                    action: decks.isEmpty
+                        ? FilledButton.icon(
+                            onPressed: () => _editDeck(context, widget.store),
+                            icon: const Icon(Icons.add),
+                            label: const Text('新建牌组'),
+                          )
+                        : null,
+                  ),
+              ],
             ),
-            const SizedBox(height: 12),
-            _GlassSegments<String?>(
-              options: {
-                null: '全部',
-                for (final g
-                    in decks
-                        .map((d) => d.group)
-                        .where((g) => g.isNotEmpty)
-                        .toSet())
-                  g: g,
-              },
-              value: _group,
-              onChanged: (g) => setState(() => _group = g),
-            ),
-            const SizedBox(height: 20),
-            if (visible.isEmpty)
-              _Empty(
-                icon: Icons.layers_outlined,
-                title: decks.isEmpty ? '把知识装进牌组' : '没有找到这个牌组',
-                detail: decks.isEmpty
-                    ? '按科目或主题整理卡片，再选择想学习的内容。'
-                    : '试试其他关键词，或者切换分组。',
-                action: decks.isEmpty
-                    ? FilledButton.icon(
-                        onPressed: () => _editDeck(context, widget.store),
-                        icon: const Icon(Icons.add),
-                        label: const Text('新建牌组'),
-                      )
-                    : null,
+            if (visible.isNotEmpty)
+              _DeckReorderList(
+                store: widget.store,
+                counts: data.counts,
+                onReorder: _reorder,
+                decks: decks,
+                visible: visible,
+                selectedId: wide ? _selected : null,
+                onSelect: (id) {
+                  if (wide) {
+                    setState(() => _selected = id);
+                  } else {
+                    _push(context, _DeckPage(store: widget.store, deckId: id));
+                  }
+                },
               ),
-            ...visible.map(
-              (d) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _DeckTile(
-                  store: widget.store,
-                  deck: d,
-                  selected: wide && d.id == _selected,
-                  onTap: () {
-                    if (wide) {
-                      setState(() => _selected = d.id);
-                    } else {
-                      _push(
-                        context,
-                        _DeckPage(store: widget.store, deckId: d.id),
-                      );
-                    }
-                  },
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: OutlinedButton.icon(
+                  onPressed: () =>
+                      _push(context, _ImportPage(store: widget.store)),
+                  icon: const Icon(Icons.file_download_outlined),
+                  label: const Text('导入墨墨文本'),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () => _push(context, _ImportPage(store: widget.store)),
-              icon: const Icon(Icons.file_download_outlined),
-              label: const Text('导入墨墨文本'),
             ),
           ],
         );
@@ -155,6 +215,81 @@ class _LibraryPageState extends State<_LibraryPage> {
       },
     ),
   );
+}
+
+class _DeckReorderList extends StatelessWidget {
+  const _DeckReorderList({
+    required this.store,
+    required this.decks,
+    required this.visible,
+    required this.onSelect,
+    required this.counts,
+    required this.onReorder,
+    this.selectedId,
+  });
+
+  final AppStore store;
+  final List<DeckData> decks;
+  final List<DeckData> visible;
+  final String? selectedId;
+  final ValueChanged<String> onSelect;
+  final Map<String, Map<String, int>> counts;
+  final ValueChanged<List<String>> onReorder;
+
+  @override
+  Widget build(BuildContext context) {
+    return SliverReorderableList(
+      itemCount: visible.length,
+      onReorderItem: (oldIndex, newIndex) {
+        if (oldIndex == newIndex) return;
+        final visibleOrder = visible.map((deck) => deck.id).toList();
+        visibleOrder.insert(newIndex, visibleOrder.removeAt(oldIndex));
+        final visibleIds = visibleOrder.toSet();
+        var cursor = 0;
+        // 筛选时只交换可见牌组所在的位置，其他牌组留在原位。
+        final order = [
+          for (final deck in decks)
+            visibleIds.contains(deck.id) ? visibleOrder[cursor++] : deck.id,
+        ];
+        onReorder(order);
+      },
+      proxyDecorator: (child, index, animation) => AnimatedBuilder(
+        animation: animation,
+        builder: (context, child) {
+          final lift = MediaQuery.disableAnimationsOf(context)
+              ? 0.0
+              : Curves.easeOut.transform(animation.value);
+          return Transform.scale(
+            scale: 1 + lift * .02,
+            child: Material(
+              color: Colors.transparent,
+              elevation: 6 * lift,
+              borderRadius: BorderRadius.circular(24),
+              child: child,
+            ),
+          );
+        },
+        child: child,
+      ),
+      itemBuilder: (context, index) {
+        final deck = visible[index];
+        return Padding(
+          key: ValueKey(deck.id),
+          padding: const EdgeInsets.only(bottom: 12),
+          child: ReorderableDelayedDragStartListener(
+            index: index,
+            child: _DeckTile(
+              store: store,
+              deck: deck,
+              counts: counts[deck.id]!,
+              selected: deck.id == selectedId,
+              onTap: () => onSelect(deck.id),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 Future<void> _editDeck(
@@ -297,6 +432,7 @@ Future<void> _editDeck(
                                 algorithm: algorithm,
                                 params: parsed,
                                 chapters: deck?.chapters ?? [],
+                                sortOrder: deck?.sortOrder ?? 0,
                               ),
                             );
                             if (sheet.mounted) Navigator.pop(sheet);
@@ -492,6 +628,7 @@ class _DeckPageState extends State<_DeckPage> {
     final ids = _selected.toList();
     await _action(context, () async {
       if (operation == 'delete') {
+        if (isOfficialContentDeck(widget.deckId)) return;
         if (!await _confirm(
           context,
           '删除 ${ids.length} 张卡片？',
@@ -616,17 +753,18 @@ class _DeckPageState extends State<_DeckPage> {
                 );
               }
               if (v == 'delete' &&
+                  !isOfficialContentDeck(widget.deckId) &&
                   context.mounted &&
                   await _confirm(context, '删除整副牌组？', '牌组中的卡片和学习记录将一起删除。')) {
                 await widget.store.deleteDeck(widget.deckId);
                 if (context.mounted && !widget.embedded) Navigator.pop(context);
               }
             }),
-            options: const {
+            options: {
               'chapter': '新建章节',
               'export': '导出语法 TXT',
               'plain': '导出纯文本',
-              'delete': '删除牌组',
+              if (!isOfficialContentDeck(widget.deckId)) 'delete': '删除牌组',
             },
           ),
           const SizedBox(width: 16),
@@ -900,12 +1038,13 @@ class _DeckPageState extends State<_DeckPage> {
                             _ActionMenu<String>(
                               destructive: const {'delete'},
                               onSelected: _batch,
-                              options: const {
+                              options: {
                                 'paused': '暂停学习',
                                 'library': '移出计划',
                                 'move': '移动到牌组',
                                 'chapter': '移动到章节',
-                                'delete': '删除所选',
+                                if (!isOfficialContentDeck(widget.deckId))
+                                  'delete': '删除所选',
                               },
                             ),
                           ],

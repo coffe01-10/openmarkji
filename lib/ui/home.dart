@@ -338,14 +338,20 @@ class _DeckTile extends StatelessWidget {
     required this.deck,
     required this.onTap,
     this.selected = false,
+    this.counts,
   });
   final AppStore store;
   final DeckData deck;
   final VoidCallback onTap;
   final bool selected;
+  final Map<String, int>? counts;
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).colorScheme;
+    Widget countLabel(Map<String, int> count) => Text(
+      '${count['total']} 张卡片  ·  ${count['active']} 张在计划中',
+      style: TextStyle(fontSize: 12, color: c.onSurfaceVariant),
+    );
     return Material(
       color: selected ? c.secondaryContainer : c.surfaceContainerLow,
       borderRadius: BorderRadius.circular(24),
@@ -380,16 +386,10 @@ class _DeckTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    _Load(
-                      future: store.counts(deck.id),
-                      builder: (count) => Text(
-                        '${count['total']} 张卡片  ·  ${count['active']} 张在计划中',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: c.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
+                    if (counts != null)
+                      countLabel(counts!)
+                    else
+                      _Load(future: store.counts(deck.id), builder: countLabel),
                   ],
                 ),
               ),
