@@ -1,4 +1,4 @@
-param([switch]$DebugBuild)
+param([switch]$DebugBuild, [string]$BuildName)
 $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $localProperties = Get-Content -LiteralPath (Join-Path $projectRoot 'android/local.properties')
@@ -11,6 +11,7 @@ try {
     Push-Location -LiteralPath $aliasPath
     try {
         $buildArgs = @((Join-Path $flutterSdk 'bin/cache/flutter_tools.snapshot'), 'build', 'apk', '--no-pub')
+        if ($BuildName) { $buildArgs += @('--build-name', $BuildName) }
         if ($DebugBuild) { $buildArgs += '--debug' } else { $buildArgs += @('--release', '--split-per-abi') }
         & (Join-Path $flutterSdk 'bin/cache/dart-sdk/bin/dart.exe') @buildArgs
         $buildResult = $LASTEXITCODE

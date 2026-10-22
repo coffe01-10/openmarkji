@@ -2,8 +2,10 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-const appVersion = '1.0.0';
-const appBuild = '1';
+// Keep semantic versions for update comparisons; the release label is 1.01.
+const appVersion = '1.0.1';
+const appDisplayVersion = '1.01';
+const appBuild = '2';
 const releaseFeed = String.fromEnvironment('OPENMARKJI_UPDATE_URL');
 
 class AppRelease {

@@ -23,7 +23,7 @@ class _AboutPage extends StatelessWidget {
                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
-              const Text('$appVersion ($appBuild) · 离线记忆，慢慢积累'),
+              const Text('$appDisplayVersion ($appBuild) · 离线记忆，慢慢积累'),
             ],
           ),
         ),
@@ -34,7 +34,7 @@ class _AboutPage extends StatelessWidget {
                 Icons.system_update_alt_rounded,
                 '检查更新',
                 () => _push(context, const _UpdatePage()),
-                subtitle: '当前版本 $appVersion',
+                subtitle: '当前版本 $appDisplayVersion',
               ),
               _supportTile(
                 Icons.verified_user_outlined,
@@ -52,7 +52,7 @@ class _AboutPage extends StatelessWidget {
                 () => showLicensePage(
                   context: context,
                   applicationName: 'OpenMarkji',
-                  applicationVersion: appVersion,
+                  applicationVersion: appDisplayVersion,
                 ),
               ),
             ],
@@ -138,7 +138,7 @@ class _UpdatePageState extends State<_UpdatePage> {
             ),
             const SizedBox(height: 18),
             const Text(
-              'OpenMarkji $appVersion',
+              'OpenMarkji $appDisplayVersion',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600),
             ),
@@ -350,7 +350,7 @@ class _FeedbackPageState extends State<_FeedbackPage> {
   }
 
   String get _report =>
-      '# OpenMarkji 反馈\n\n类型：${_kind == 'bug' ? '问题反馈' : '功能建议'}\n版本：$appVersion ($appBuild)\n平台：${kIsWeb ? 'Web' : defaultTargetPlatform.name}\n\n${_description.text.trim()}\n';
+      '# OpenMarkji 反馈\n\n类型：${_kind == 'bug' ? '问题反馈' : '功能建议'}\n版本：$appDisplayVersion ($appBuild)\n平台：${kIsWeb ? 'Web' : defaultTargetPlatform.name}\n\n${_description.text.trim()}\n';
   @override
   Widget build(BuildContext context) => _SettingsDetail(
     title: '问题反馈与功能建议',

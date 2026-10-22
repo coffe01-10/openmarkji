@@ -5,7 +5,7 @@ import 'package:openmarkji/data/app_updates.dart';
 
 void main() {
   test('读取更新源并区分新版本与当前版本', () async {
-    for (final version in ['1.0.0', '1.1.0', '0.9.9']) {
+    for (final version in [appVersion, '1.1.0', '1.0.0']) {
       final release = await AppRelease.check(
         Uri.parse('https://example.com/releases.json'),
         client: MockClient((request) async {
