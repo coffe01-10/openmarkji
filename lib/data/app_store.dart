@@ -10,6 +10,7 @@ import '../algorithms/mmx5.dart';
 import '../algorithms/mmx6.dart';
 import '../content/markji.dart';
 import '../domain/entities.dart';
+import '../domain/statistics.dart';
 import 'connection.dart';
 import 'database.dart';
 
@@ -610,6 +611,7 @@ class AppStore extends ChangeNotifier {
             ...log,
             'interval_days': interval,
             'sr_state_after': updated.state,
+            'scheduled_interval_days': result.nextInterval,
           };
           await putCard(updated, announce: false);
         }
@@ -711,7 +713,7 @@ class AppStore extends ChangeNotifier {
   Future<List<int>> forecast({DateTime? at}) async {
     final now = at ?? DateTime.now();
     final values = <int>[];
-    for (var i = 0; i < 7; i++) {
+    for (var i = 0; i < 15; i++) {
       final start = DateTime(now.year, now.month, now.day + i),
           end = DateTime(now.year, now.month, now.day + i + 1);
       values.add(
@@ -723,6 +725,231 @@ class AppStore extends ChangeNotifier {
       );
     }
     return values;
+  }
+
+  /// 历史正式复习评分与未来 MMX 预测使用不同时间轴，缺失观测保留为空。
+  Future<Map<String, dynamic>> retentionStats({
+    int days = 14,
+    DateTime? at,
+  }) async {
+    final now = at ?? DateTime.now();
+    final dayList = List<int>.generate(days + 1, (i) => i);
+    final dates = [
+      for (final d in dayList)
+        DateTime(now.year, now.month, now.day - days + d),
+    ];
+    final counts = List.filled(days + 1, 0);
+    final remembered = List.filled(days + 1, 0);
+    final indices = {
+      for (var i = 0; i < dates.length; i++) dayKey(dates[i]): i,
+    };
+    final reviews = await db.rows(
+      "SELECT reviewed_at, grade, payload FROM reviews WHERE kind='formal' AND reviewed_at>=? AND reviewed_at<=?",
+      [dates.first.millisecondsSinceEpoch, now.millisecondsSinceEpoch],
+    );
+    for (final row in reviews) {
+      final log = decodeObject(row['payload']);
+      // 首次学习的自评不是隔日回忆观测；当日重学已由 kind 过滤。
+      if (((log['interval_days'] as num?) ?? 0) <= 0) continue;
+      final date = DateTime.fromMillisecondsSinceEpoch(
+        row['reviewed_at'] as int,
+      );
+      final i = indices[dayKey(date)]!;
+      counts[i]++;
+      if (row['grade'] == 1 || row['grade'] == 4) remembered[i]++;
+    }
+    final actual = <double?>[
+      for (final i in dayList)
+        counts[i] == 0 ? null : remembered[i] / counts[i] * 100,
+    ];
+
+    // 每张卡按自己的状态版本、牌组参数和距上次正式复习的时间预测，
+    // 再对概率求平均；不能把平均稳定性代入一个任意指数函数。
+    final forecast = List<double>.filled(days + 1, 0);
+    final learningCurve = List<double>.filled(days + 1, 0);
+    var modeledCards = 0;
+    final cardRows = await db.rows(
+      "SELECT c.payload card_payload, d.payload deck_payload FROM cards c JOIN decks d ON d.id=c.deck_id WHERE c.plan='active'",
+    );
+    for (final row in cardRows) {
+      final c = StudyCard.fromJson(decodeObject(row['card_payload']));
+      if (c.state == null || c.lastReview == null) continue;
+      final state = MmxState.fromJsonString(c.state!);
+      if (!state.stability.isFinite || state.stability <= 0) continue;
+      final deck = DeckData.fromJson(decodeObject(row['deck_payload']));
+      final model = algorithm(deck, state.version);
+      final elapsed = math.max(
+        0.0,
+        now.difference(c.lastReview!).inMilliseconds /
+            Duration.millisecondsPerDay,
+      );
+      for (final d in dayList) {
+        forecast[d] +=
+            model.forgettingCurve(elapsed + d, state.stability) * 100;
+        learningCurve[d] +=
+            model.forgettingCurve(d.toDouble(), state.stability) * 100;
+      }
+      modeledCards++;
+    }
+
+    return {
+      'actual': actual,
+      'counts': counts,
+      'dates': dates,
+      'forecast': <double?>[
+        for (final value in forecast)
+          modeledCards == 0 ? null : value / modeledCards,
+      ],
+      'modeledCards': modeledCards,
+      'learningCurve': <double?>[
+        for (final value in learningCurve)
+          modeledCards == 0 ? null : value / modeledCards,
+      ],
+      'days': dayList,
+    };
+  }
+
+  /// 学习柱图与持久度历史：以当前学习计划内的卡片为回看范围。
+  Future<List<LearningBucket>> learningStatistics({
+    StatisticsPeriod period = StatisticsPeriod.day,
+    DateTime? at,
+  }) async {
+    final now = at ?? DateTime.now();
+    final past = switch (period) {
+      StatisticsPeriod.day => 14,
+      StatisticsPeriod.week => 8,
+      StatisticsPeriod.month => 5,
+    };
+    final future = switch (period) {
+      StatisticsPeriod.day => 15,
+      StatisticsPeriod.week => 8,
+      StatisticsPeriod.month => 5,
+    };
+    final buckets = [
+      for (var i = -past; i <= future; i++)
+        LearningBucket(period.start(now, i), period.start(now, i + 1)),
+    ];
+    final reviews = await db.rows(
+      'SELECT card_id, reviewed_at, grade, kind, elapsed_ms, payload FROM reviews WHERE reviewed_at<=? ORDER BY reviewed_at,rowid',
+      [now.millisecondsSinceEpoch],
+    );
+    final formal = <String, List<Map<String, dynamic>>>{};
+    for (final row in reviews) {
+      final time = DateTime.fromMillisecondsSinceEpoch(
+        row['reviewed_at'] as int,
+      );
+      final log = decodeObject(row['payload']);
+      if (row['kind'] == 'formal') {
+        formal.putIfAbsent(row['card_id'] as String, () => []).add({
+          ...log,
+          'time': time,
+        });
+      }
+      final bucket = buckets
+          .where((b) => !time.isBefore(b.start) && time.isBefore(b.end))
+          .firstOrNull;
+      if (bucket == null) continue;
+      bucket.elapsedMs += row['elapsed_ms'] as int;
+      if (row['kind'] != 'formal') continue;
+      bucket.grades[(row['grade'] as int) - 1]++;
+      if (((log['interval_days'] as num?) ?? 0) == 0) {
+        bucket.newCards++;
+      } else {
+        bucket.reviewCards++;
+      }
+    }
+    final rows = await db.rows(
+      "SELECT c.payload card_payload, d.payload deck_payload FROM cards c JOIN decks d ON d.id=c.deck_id WHERE c.plan IN ('active','paused')",
+    );
+    for (final row in rows) {
+      final card = StudyCard.fromJson(decodeObject(row['card_payload']));
+      final deck = DeckData.fromJson(decodeObject(row['deck_payload']));
+      final history = formal[card.id] ?? [];
+      final enrolled = card.enrolledAt ?? card.createdAt;
+      for (final b in buckets) {
+        if (card.plan == 'active' && card.dueAt != null) {
+          final due = card.dueAt!.isBefore(dayStart(now))
+              ? dayStart(now)
+              : card.dueAt!;
+          if (!due.isBefore(b.start) && due.isBefore(b.end)) b.pending++;
+        }
+        if (b.start.isAfter(now) || !enrolled.isBefore(b.end)) continue;
+        b.enrolled++;
+        // 当前分组用当前排期；过去分组用该分组结束前的最后一次状态。
+        final current = !now.isBefore(b.start) && now.isBefore(b.end);
+        final log = history
+            .where((r) => (r['time'] as DateTime).isBefore(b.end))
+            .lastOrNull;
+        double? interval;
+        if (current && card.lastReview != null && card.dueAt != null) {
+          interval =
+              card.dueAt!.difference(card.lastReview!).inMilliseconds /
+              Duration.millisecondsPerDay;
+        } else if (log != null && log['scheduled_interval_days'] != null) {
+          interval = (log['scheduled_interval_days'] as num).toDouble();
+        } else {
+          final stateJson =
+              log?['sr_state_after'] as String? ??
+              (card.lastReview != null && card.lastReview!.isBefore(b.end)
+                  ? card.state
+                  : null);
+          if (stateJson != null) {
+            final state = MmxState.fromJsonString(stateJson);
+            interval = algorithm(
+              deck,
+              state.version,
+            ).nextInterval(state.stability).toDouble();
+          } else if (card.firstLearned != null &&
+              card.firstLearned!.isBefore(b.end)) {
+            for (var i = 0; i < 4; i++) {
+              b.durability[i] = null;
+            }
+          }
+        }
+        if (interval != null) {
+          for (var i = 0; i < 4; i++) {
+            if (interval >= [10, 30, 60, 90][i] && b.durability[i] != null) {
+              b.durability[i] = b.durability[i]! + 1;
+            }
+          }
+        }
+      }
+    }
+    return buckets;
+  }
+
+  /// 复习评分统计：返回各评级的数量
+  Future<Map<String, int>> reviewGradeStats({int days = 30}) async {
+    final since = dayStart(DateTime.now().subtract(Duration(days: days)));
+    final rows = await db.rows(
+      "SELECT grade, count(*) n FROM reviews WHERE kind='formal' AND reviewed_at>=? GROUP BY grade",
+      [since.millisecondsSinceEpoch],
+    );
+    final result = <String, int>{
+      'know': 0,
+      'vague': 0,
+      'forgot': 0,
+      'familiar': 0,
+    };
+    for (final row in rows) {
+      final grade = row['grade'] as int;
+      final n = row['n'] as int;
+      switch (grade) {
+        case 1:
+          result['know'] = n;
+          break;
+        case 2:
+          result['vague'] = n;
+          break;
+        case 3:
+          result['forgot'] = n;
+          break;
+        case 4:
+          result['familiar'] = n;
+          break;
+      }
+    }
+    return result;
   }
 
   Future<String> addMedia(String name, Uint8List bytes, {String? id}) async {

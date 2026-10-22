@@ -22,6 +22,67 @@ void main() {
     await store.db.close();
   });
 
+  testWidgets('三个统计视图支持切换和日周月，窄屏大字体零数据不溢出', (tester) async {
+    final semantics = tester.ensureSemantics();
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('统计').last);
+    await tester.pumpAndSettle();
+    expect(find.text('你的学习遗忘曲线'), findsOneWidget);
+    expect(find.text('艾宾浩斯遗忘曲线'), findsOneWidget);
+    expect(find.text('完成首次学习后显示你的个人曲线。'), findsOneWidget);
+    expect(
+      tester
+          .getSemantics(find.bySemanticsLabel(RegExp('^今天，')))
+          .getSemanticsData()
+          .hasAction(SemanticsAction.tap),
+      isFalse,
+    );
+    semantics.dispose();
+    Future<void> select(String label) async {
+      await tester.drag(find.byType(ListView).first, const Offset(0, 1600));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label).first);
+      await tester.pumpAndSettle();
+    }
+
+    await select('学习情况');
+    expect(find.text('认知情况'), findsOneWidget);
+    await select('周');
+    final horizontal = find.byType(SingleChildScrollView).first;
+    await tester.ensureVisible(horizontal);
+    await tester.pumpAndSettle();
+    await tester.drag(horizontal, const Offset(-180, 0));
+    await tester.pumpAndSettle();
+    final scroller = tester
+        .widget<SingleChildScrollView>(horizontal)
+        .controller!;
+    final now = DateTime.now();
+    final index = ((scroller.offset + 80) / (46 * 1.6)).floor();
+    final date = DateTime(
+      now.year,
+      now.month,
+      now.day - now.weekday + 1 + (index - 8) * 7,
+    );
+    await tester.tapAt(tester.getTopLeft(horizontal) + const Offset(80, 100));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(index == 8 ? '本周' : '${date.month}/${date.day}周'),
+      findsOneWidget,
+    );
+    await select('复习新学');
+    expect(find.text('新学'), findsOneWidget);
+    await select('记忆持久度');
+    expect(find.text('记忆持久度 ≥ 90 天'), findsOneWidget);
+    await select('月');
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('手机选卡、揭晓、评分、撤销与重学完整链路', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;

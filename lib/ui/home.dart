@@ -413,15 +413,10 @@ class _StatsPage extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: store,
     builder: (context, _) => _Load(
-      future: Future.wait([
-        store.overview(),
-        store.activity(),
-        store.forecast(),
-      ]),
+      future: Future.wait([store.overview(), store.activity()]),
       builder: (data) {
         final overview = data[0] as Map<String, dynamic>,
-            activity = data[1] as List<Map<String, dynamic>>,
-            forecast = data[2] as List<int>;
+            activity = data[1] as List<Map<String, dynamic>>;
         final formal = overview['formal'] as int;
         final c = Theme.of(context).colorScheme;
         return _Page(
@@ -429,6 +424,8 @@ class _StatsPage extends StatelessWidget {
           subtitle: 'LEARNING INSIGHTS',
           trailing: const Icon(Icons.insights_rounded, size: 30),
           children: [
+            _StatisticsViews(store: store),
+            const SizedBox(height: 24),
             Row(
               children: [
                 Expanded(
@@ -526,49 +523,6 @@ class _StatsPage extends StatelessWidget {
                     ],
                   ),
                 ],
-              ),
-            ),
-            const _SectionLabel('未来七天'),
-            _Panel(
-              child: SizedBox(
-                height: 210,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: List.generate(7, (i) {
-                    final max = math.max(1, forecast.reduce(math.max));
-                    final date = DateTime.now().add(Duration(days: i));
-                    return Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Text(
-                              '${forecast[i]}',
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            const SizedBox(height: 8),
-                            Container(
-                              height: 8 + forecast[i] / max * 102,
-                              decoration: BoxDecoration(
-                                color: i == 0 ? c.primary : c.primaryContainer,
-                                borderRadius: BorderRadius.circular(9),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            Text(
-                              i == 0 ? '今天' : '${date.month}/${date.day}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: c.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-                ),
               ),
             ),
             const _SectionLabel('最近学习'),

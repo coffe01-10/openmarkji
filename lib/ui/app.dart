@@ -15,6 +15,7 @@ import '../data/app_store.dart';
 import '../data/app_updates.dart';
 import '../data/file_export.dart' as file_export;
 import '../domain/entities.dart';
+import '../domain/statistics.dart';
 import 'content_view.dart';
 import 'flclash/liquid_glass.dart';
 import 'flclash/navigation_dock.dart';
@@ -29,6 +30,7 @@ part 'appearance.dart';
 part 'support.dart';
 part 'practice.dart';
 part 'learning_settings.dart';
+part 'statistics.dart';
 
 class OpenMarkjiApp extends StatelessWidget {
   const OpenMarkjiApp({super.key, required this.store});
@@ -187,10 +189,7 @@ class _ShellState extends State<_Shell> {
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 840;
     final pages = [
-      _TodayPage(
-        store: widget.store,
-        onLibrary: () => _select(1),
-      ),
+      _TodayPage(store: widget.store, onLibrary: () => _select(1)),
       _LibraryPage(store: widget.store),
       _StatsPage(store: widget.store),
       _SettingsPage(store: widget.store),
