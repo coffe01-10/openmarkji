@@ -123,6 +123,65 @@ class AppStore extends ChangeNotifier {
     changed();
   }
 
+  Future<int> setDefaultAlgorithm(
+    int version, {
+    bool applyToExisting = false,
+  }) async {
+    if (version != 5 && version != 6) {
+      throw ArgumentError.value(version, 'version', '支持 MMX-5 或 MMX-6');
+    }
+    var updated = 0;
+    await db.transaction(() async {
+      await setSetting(
+        'preferences',
+        jsonEncode({...preferences.toJson(), 'defaultAlgorithm': version}),
+      );
+      if (applyToExisting) {
+        for (final deck in await decks()) {
+          if (deck.algorithm == version) continue;
+          await db.customStatement('UPDATE decks SET payload=? WHERE id=?', [
+            jsonEncode({
+              ...deck.toJson(),
+              'algorithm': version,
+              'params': <double>[],
+            }),
+            deck.id,
+          ]);
+          updated++;
+        }
+      }
+    });
+    preferences.defaultAlgorithm = version;
+    changed();
+    return updated;
+  }
+
+  Future<({int planned, double dailyNew, double dailyReview})> learningLoad({
+    int days = 30,
+    DateTime? at,
+  }) async {
+    final now = at ?? DateTime.now();
+    final start = DateTime(
+      now.year,
+      now.month,
+      now.day - days + 1,
+    ).millisecondsSinceEpoch;
+    final end = dayEnd(now).millisecondsSinceEpoch;
+    final cards = (await db.rows(
+      "SELECT count(*) planned, coalesce(sum(first_learned>=? AND first_learned<?),0) learned FROM cards WHERE plan='active'",
+      [start, end],
+    )).first;
+    final reviews = (await db.rows(
+      "SELECT count(*) n FROM reviews r JOIN cards c ON c.id=r.card_id WHERE c.plan='active' AND r.kind='formal' AND r.reviewed_at>=? AND r.reviewed_at<? AND r.reviewed_at>c.first_learned",
+      [start, end],
+    )).first;
+    return (
+      planned: cards['planned'] as int,
+      dailyNew: (cards['learned'] as int) / days,
+      dailyReview: (reviews['n'] as int) / days,
+    );
+  }
+
   Future<List<DeckData>> decks() async =>
       (await db.rows('SELECT payload FROM decks ORDER BY rowid'))
           .map((r) => DeckData.fromJson(decodeObject(r['payload'])))
@@ -778,6 +837,7 @@ class AppStore extends ChangeNotifier {
       description: '三张示例，认识你的新学习空间',
       group: '示例',
       chapters: ['开始使用'],
+      algorithm: preferences.defaultAlgorithm,
     );
     await putDeck(d, announce: false);
     await importCards(d.id, [

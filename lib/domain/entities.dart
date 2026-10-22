@@ -192,6 +192,7 @@ class Preferences {
     this.dynamicColor = true,
     this.fontSize = 18,
     this.defaultLimit = 20,
+    this.defaultAlgorithm = 6,
     this.liquidGlass = 'ultra',
     this.floatingNavigation = true,
     this.tabAnimation = 'slide',
@@ -207,7 +208,7 @@ class Preferences {
     this.showRecallHint = true,
   });
   String theme;
-  int color, defaultLimit;
+  int color, defaultLimit, defaultAlgorithm;
   bool dynamicColor;
   double fontSize;
   String liquidGlass, tabAnimation, colorStyle, fontFamily;
@@ -222,6 +223,7 @@ class Preferences {
     'dynamicColor': dynamicColor,
     'fontSize': fontSize,
     'defaultLimit': defaultLimit,
+    'defaultAlgorithm': defaultAlgorithm,
     'liquidGlass': liquidGlass,
     'floatingNavigation': floatingNavigation,
     'tabAnimation': tabAnimation,
@@ -242,6 +244,7 @@ class Preferences {
     dynamicColor: j['dynamicColor'] ?? true,
     fontSize: (j['fontSize'] as num? ?? 18).toDouble(),
     defaultLimit: j['defaultLimit'] ?? 20,
+    defaultAlgorithm: j['defaultAlgorithm'] ?? 6,
     liquidGlass: j['liquidGlass'] ?? 'ultra',
     floatingNavigation: j['floatingNavigation'] ?? true,
     tabAnimation: j['tabAnimation'] ?? 'slide',

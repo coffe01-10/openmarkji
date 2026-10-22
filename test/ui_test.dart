@@ -1,5 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openmarkji/data/app_store.dart';
 import 'package:openmarkji/data/database.dart';
@@ -311,6 +312,118 @@ void main() {
       reason: '今日应向左离开',
     );
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('返回按钮下拉超出工具栏时，绘制区域不被工具栏裁掉', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('设置').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('外观与阅读'));
+    await tester.pumpAndSettle();
+    final back = find.widgetWithIcon(IconButton, Icons.arrow_back_rounded);
+    final gesture = await tester.startGesture(tester.getCenter(back));
+    await tester.pump(const Duration(milliseconds: 16));
+    await gesture.moveBy(const Offset(0, 70));
+    await tester.pump(const Duration(milliseconds: 16));
+    await tester.pump(const Duration(milliseconds: 400));
+    final box = tester.renderObject<RenderBox>(back);
+    final painted = ElasticPress.paintBoundsOf(box);
+    expect(
+      box.localToGlobal(painted.bottomCenter).dy,
+      greaterThan(tester.getRect(find.byType(AppBar)).bottom),
+    );
+    RenderObject child = box;
+    for (var parent = box.parent; parent != null; parent = parent.parent) {
+      if (parent is RenderClipRect) {
+        final clip = parent.describeApproximatePaintClip(child);
+        if (clip != null) {
+          final bounds = MatrixUtils.transformRect(
+            box.getTransformTo(parent),
+            painted,
+          );
+          expect(
+            clip.contains(bounds.bottomCenter - const Offset(0, 1)),
+            isTrue,
+            reason: '弹性按钮拖出工具栏后应完整显示',
+          );
+        }
+      }
+      child = parent;
+    }
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('学习偏好选择算法，可统一应用并用于新建牌组', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await store.putDeck(DeckData(id: 'old', name: '旧牌组'));
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('设置').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('学习偏好'));
+    await tester.pumpAndSettle();
+    expect(find.text('学习计划卡片数'), findsOneWidget);
+    expect(find.text('平均每天新学卡片数'), findsOneWidget);
+    expect(find.text('平均每天复习卡片数'), findsOneWidget);
+    await tester.tap(find.text('MMX-6.0'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('MMX-5.0'));
+    await tester.pumpAndSettle();
+    expect(store.preferences.defaultAlgorithm, 5);
+    expect((await store.deck('old'))!.algorithm, 6);
+    await tester.tap(find.text('全部牌组使用 MMX-5'));
+    await tester.pumpAndSettle();
+    expect((await store.deck('old'))!.algorithm, 5);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('牌组').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('新建牌组'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, '牌组名称'), '新算法牌组');
+    await tester.ensureVisible(find.text('保存牌组'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存牌组'));
+    await tester.pumpAndSettle();
+    expect((await store.decks()).last.algorithm, 5);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('玻璃搜索框支持搜索和清空，关闭玻璃仍可搜索', (tester) async {
+    Finder title(String value) => find.byWidgetPredicate(
+      (widget) => widget is Text && widget.data == value,
+    );
+    await store.putDeck(DeckData(id: 'a', name: '英语'));
+    await store.putDeck(DeckData(id: 'b', name: '数学'));
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('牌组').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '数学');
+    await tester.pumpAndSettle();
+    expect(title('英语'), findsNothing);
+    expect(title('数学'), findsOneWidget);
+    await tester.tap(find.byTooltip('清除搜索'));
+    await tester.pumpAndSettle();
+    expect(title('英语'), findsOneWidget);
+    store.preferences.liquidGlass = 'none';
+    await store.savePreferences();
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '英语');
+    await tester.pumpAndSettle();
+    expect(title('数学'), findsNothing);
+    expect(title('英语'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

@@ -440,6 +440,7 @@ class _SettingsDetail extends StatelessWidget {
     return Scaffold(
       backgroundColor: background,
       appBar: AppBar(
+        clipBehavior: Clip.none,
         backgroundColor: background,
         title: Text(title),
         leading: _appearanceBack(context),
@@ -488,86 +489,91 @@ class _StudyPrefsPageState extends State<_StudyPrefsPage> {
     final p = widget.store.preferences;
     return _SettingsDetail(
       title: widget.interaction ? '卡片与交互' : '学习偏好',
-      child: _AppearanceCard(
-        child: Column(
-          children: [
-            if (widget.interaction) ...[
-              SwitchListTile(
-                title: const Text('学习触感反馈'),
-                subtitle: const Text('揭晓答案时轻触振动'),
-                value: p.studyHaptics,
-                onChanged: (v) => _action(context, () async {
-                  p.studyHaptics = v;
-                  await widget.store.savePreferences();
-                }),
-              ),
-              SwitchListTile(
-                title: const Text('显示学习进度'),
-                subtitle: const Text('显示已完成数量、剩余数量和进度条'),
-                value: p.showStudyProgress,
-                onChanged: (v) => _action(context, () async {
-                  p.showStudyProgress = v;
-                  await widget.store.savePreferences();
-                }),
-              ),
-              SwitchListTile(
-                title: const Text('显示回忆提示'),
-                subtitle: const Text('揭晓前提示先在心里回忆答案'),
-                value: p.showRecallHint,
-                onChanged: (v) => _action(context, () async {
-                  p.showRecallHint = v;
-                  await widget.store.savePreferences();
-                }),
-              ),
-            ] else ...[
-              ListTile(
-                leading: const Icon(Icons.auto_stories_outlined),
-                title: const Text('新牌组每日新学上限'),
-                subtitle: const Text(
-                  '已创建牌组请在各自设置中修改',
-                  style: TextStyle(fontSize: 12),
-                ),
-                trailing: Text('${p.defaultLimit} 张'),
-                onTap: () => _action(context, () async {
-                  final value = await _textPrompt(
-                    context,
-                    '默认每日新学上限',
-                    initial: '${p.defaultLimit}',
-                  );
-                  if (value == null) return;
-                  final n = int.tryParse(value);
-                  if (n == null || n < 0) {
-                    throw const FormatException('请输入非负整数');
-                  }
-                  p.defaultLimit = n;
-                  await widget.store.savePreferences();
-                }),
-              ),
-              _AppearanceMenu(
-                title: '当日重学间隔',
-                value: '${p.relearnGap}',
-                options: const {
-                  '1': '间隔 1 张',
-                  '3': '间隔 3 张',
-                  '5': '间隔 5 张',
-                  '10': '间隔 10 张',
-                },
-                onChanged: (v) => _action(context, () async {
-                  p.relearnGap = int.parse(v);
-                  await widget.store.savePreferences();
-                }),
-              ),
-              const ListTile(
-                leading: Icon(Icons.psychology_outlined),
-                title: Text('先复习，再学习'),
-                subtitle: Text(
-                  '首次评分决定长期排期；当日重学单独记录。',
-                  style: TextStyle(fontSize: 12, height: 1.6),
-                ),
-              ),
-            ],
-          ],
-        ),
+      child: Column(
+        children: [
+          if (!widget.interaction) _AlgorithmPlanSection(store: widget.store),
+          _AppearanceCard(
+            child: Column(
+              children: [
+                if (widget.interaction) ...[
+                  SwitchListTile(
+                    title: const Text('学习触感反馈'),
+                    subtitle: const Text('揭晓答案时轻触振动'),
+                    value: p.studyHaptics,
+                    onChanged: (v) => _action(context, () async {
+                      p.studyHaptics = v;
+                      await widget.store.savePreferences();
+                    }),
+                  ),
+                  SwitchListTile(
+                    title: const Text('显示学习进度'),
+                    subtitle: const Text('显示已完成数量、剩余数量和进度条'),
+                    value: p.showStudyProgress,
+                    onChanged: (v) => _action(context, () async {
+                      p.showStudyProgress = v;
+                      await widget.store.savePreferences();
+                    }),
+                  ),
+                  SwitchListTile(
+                    title: const Text('显示回忆提示'),
+                    subtitle: const Text('揭晓前提示先在心里回忆答案'),
+                    value: p.showRecallHint,
+                    onChanged: (v) => _action(context, () async {
+                      p.showRecallHint = v;
+                      await widget.store.savePreferences();
+                    }),
+                  ),
+                ] else ...[
+                  ListTile(
+                    leading: const Icon(Icons.auto_stories_outlined),
+                    title: const Text('新牌组每日新学上限'),
+                    subtitle: const Text(
+                      '已创建牌组请在各自设置中修改',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    trailing: Text('${p.defaultLimit} 张'),
+                    onTap: () => _action(context, () async {
+                      final value = await _textPrompt(
+                        context,
+                        '默认每日新学上限',
+                        initial: '${p.defaultLimit}',
+                      );
+                      if (value == null) return;
+                      final n = int.tryParse(value);
+                      if (n == null || n < 0) {
+                        throw const FormatException('请输入非负整数');
+                      }
+                      p.defaultLimit = n;
+                      await widget.store.savePreferences();
+                    }),
+                  ),
+                  _AppearanceMenu(
+                    title: '当日重学间隔',
+                    value: '${p.relearnGap}',
+                    options: const {
+                      '1': '间隔 1 张',
+                      '3': '间隔 3 张',
+                      '5': '间隔 5 张',
+                      '10': '间隔 10 张',
+                    },
+                    onChanged: (v) => _action(context, () async {
+                      p.relearnGap = int.parse(v);
+                      await widget.store.savePreferences();
+                    }),
+                  ),
+                  const ListTile(
+                    leading: Icon(Icons.psychology_outlined),
+                    title: Text('先复习，再学习'),
+                    subtitle: Text(
+                      '首次评分决定长期排期；当日重学单独记录。',
+                      style: TextStyle(fontSize: 12, height: 1.6),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

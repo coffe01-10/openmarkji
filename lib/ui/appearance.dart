@@ -59,6 +59,7 @@ class _AppearancePageState extends State<_AppearancePage> {
     return Scaffold(
       backgroundColor: _settingsCanvas(c),
       appBar: AppBar(
+        clipBehavior: Clip.none,
         leading: _appearanceBack(context),
         title: const Text('外观与阅读'),
         backgroundColor: _settingsCanvas(c),

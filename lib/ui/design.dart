@@ -1,5 +1,89 @@
 part of 'app.dart';
 
+class _GlassSearchField extends StatefulWidget {
+  const _GlassSearchField({
+    required this.hint,
+    required this.onChanged,
+    this.dense = false,
+  });
+  final String hint;
+  final ValueChanged<String> onChanged;
+  final bool dense;
+  @override
+  State<_GlassSearchField> createState() => _GlassSearchFieldState();
+}
+
+class _GlassSearchFieldState extends State<_GlassSearchField> {
+  final _controller = TextEditingController();
+  final _focus = FocusNode();
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_refresh);
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.removeListener(_refresh);
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _changed(String value) {
+    setState(() {});
+    widget.onChanged(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final glass = LiquidGlassScope.of(context);
+    final c = Theme.of(context).colorScheme;
+    final field = TextField(
+      controller: _controller,
+      focusNode: _focus,
+      onChanged: _changed,
+      decoration: InputDecoration(
+        prefixIcon: const Icon(Icons.search_rounded),
+        hintText: widget.hint,
+        isDense: widget.dense,
+        filled: !glass,
+        suffixIcon: _controller.text.isEmpty
+            ? null
+            : IconButton(
+                tooltip: '清除搜索',
+                icon: const Icon(Icons.close_rounded),
+                onPressed: () {
+                  _controller.clear();
+                  _changed('');
+                },
+              ),
+        focusedBorder: glass
+            ? OutlineInputBorder(
+                borderRadius: BorderRadius.circular(18),
+                borderSide: BorderSide(color: c.primary.withValues(alpha: .5)),
+              )
+            : null,
+      ),
+    );
+    if (!glass) return field;
+    return LiquidGlass(
+      style: LiquidGlassStyle.regular(c).copyWith(blur: 12),
+      pressed: _focus.hasFocus,
+      clipper: const ShapeBorderClipper(
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.all(Radius.circular(18)),
+        ),
+      ),
+      child: field,
+    );
+  }
+}
+
 class _ActionMenu<T> extends StatelessWidget {
   const _ActionMenu({
     required this.options,

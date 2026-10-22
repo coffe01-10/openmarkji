@@ -28,6 +28,7 @@ part 'settings.dart';
 part 'appearance.dart';
 part 'support.dart';
 part 'practice.dart';
+part 'learning_settings.dart';
 
 class OpenMarkjiApp extends StatelessWidget {
   const OpenMarkjiApp({super.key, required this.store});

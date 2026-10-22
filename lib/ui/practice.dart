@@ -225,6 +225,7 @@ class _PracticePageState extends State<_PracticePage> {
       child: Scaffold(
         backgroundColor: _settingsCanvas(c),
         appBar: AppBar(
+          clipBehavior: Clip.none,
           backgroundColor: _settingsCanvas(c),
           leading: _appearanceBack(context),
           title: Text(session?.queue.isEmpty == true ? '练习完成' : '专项练习'),

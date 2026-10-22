@@ -27,18 +27,24 @@ class _LibraryPageState extends State<_LibraryPage> {
         final list = _Page(
           title: '你的知识收藏',
           subtitle: 'LIBRARY  /  ${decks.length} 副牌组',
-          trailing: IconButton.filledTonal(
-            onPressed: () => _editDeck(context, widget.store),
-            tooltip: '新建牌组',
-            icon: const Icon(Icons.add_rounded),
+          trailing: ElasticButton(
+            child: IconButton.filledTonal(
+              style: LiquidGlassScope.of(context)
+                  ? LiquidGlass.buttonStyle(
+                      (_) => LiquidGlassStyle.regular(
+                        Theme.of(context).colorScheme,
+                      ),
+                    )
+                  : null,
+              onPressed: () => _editDeck(context, widget.store),
+              tooltip: '新建牌组',
+              icon: const Icon(Icons.add_rounded),
+            ),
           ),
           children: [
-            TextField(
+            _GlassSearchField(
               onChanged: (s) => setState(() => _search = s),
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search_rounded),
-                hintText: '搜索牌组',
-              ),
+              hint: '搜索牌组',
             ),
             const SizedBox(height: 14),
             Wrap(
@@ -147,7 +153,7 @@ Future<void> _editDeck(
         text: '${deck?.newLimit ?? store.preferences.defaultLimit}',
       ),
       params = TextEditingController(text: deck?.params.join(', ') ?? '');
-  var algorithm = deck?.algorithm ?? 6;
+  var algorithm = deck?.algorithm ?? store.preferences.defaultAlgorithm;
   String? error;
   bool saving = false;
   await showModalBottomSheet<void>(
@@ -574,13 +580,10 @@ class _DeckPageState extends State<_DeckPage> {
                   ],
                 ),
                 const SizedBox(height: 14),
-                TextField(
+                _GlassSearchField(
                   onChanged: (s) => _filter(() => _search = s),
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search_rounded),
-                    hintText: '搜索内容或标签',
-                    isDense: true,
-                  ),
+                  hint: '搜索内容或标签',
+                  dense: true,
                 ),
                 const SizedBox(height: 10),
                 SingleChildScrollView(
