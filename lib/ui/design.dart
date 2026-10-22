@@ -450,7 +450,8 @@ class _PinnedPageState extends State<_PinnedPage> {
   Widget build(BuildContext context) {
     final scaler = MediaQuery.textScalerOf(context);
     final rowHeight = math.max(52.0, scaler.scale(28) * 1.15);
-    final headerHeight = rowHeight + 24;
+    final topInset = MediaQuery.paddingOf(context).top;
+    final headerHeight = topInset + rowHeight + 24;
     return Center(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxWidth: widget.maxWidth),
@@ -480,9 +481,11 @@ class _PinnedPageState extends State<_PinnedPage> {
                 child: SizedBox(
                   height: headerHeight,
                   child: Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: widget.horizontalPadding,
-                      vertical: 12,
+                    padding: EdgeInsets.fromLTRB(
+                      widget.horizontalPadding,
+                      topInset + 12,
+                      widget.horizontalPadding,
+                      12,
                     ),
                     child: Column(
                       children: [

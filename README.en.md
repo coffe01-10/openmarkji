@@ -30,11 +30,11 @@ Memory requires spaced repetition, but manual scheduling is too tedious. OpenMar
 
 **Three-view statistics**: Forgetting curve, learning status, memory durability. See your memory retention over time, compared to the Ebbinghaus curve.
 
-![Forgetting curves](screenshots/25-retention-curves.png)
+![Forgetting curve: yours vs Ebbinghaus](assets/charts/retention-curve-en.svg)
 
-![Learning forecast](screenshots/26-learning-forecast.png)
+![Learning load: next 15 days](assets/charts/forecast-en.svg)
 
-![Cognition distribution](screenshots/27-cognition-stats.png)
+![Cognition: ratings last 30 days](assets/charts/cognition-en.svg)
 
 **Focused practice**: Randomly draw 10/20/50 cards from all, favorites, or difficult cards. Independent progress saving without disrupting daily plans.
 

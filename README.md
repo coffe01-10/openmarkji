@@ -30,11 +30,11 @@
 
 **三视图统计**：遗忘曲线、学习情况、记忆持久度。看自己的记忆保持率随时间变化，对比艾宾浩斯曲线。
 
-![遗忘曲线](screenshots/25-retention-curves.png)
+![遗忘曲线：你的记忆 vs 艾宾浩斯](assets/charts/retention-curve-zh.svg)
 
-![学习情况](screenshots/26-learning-forecast.png)
+![学习情况：未来 15 天复习负载](assets/charts/forecast-zh.svg)
 
-![认知情况](screenshots/27-cognition-stats.png)
+![认知情况：过去 30 天评级分布](assets/charts/cognition-zh.svg)
 
 **专项练习**：从全部、收藏或难卡中随机抽取 10/20/50 张，独立保存进度，不打乱日常计划。
 

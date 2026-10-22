@@ -102,6 +102,74 @@ void main() {
     await select('月');
     expect(tester.takeException(), isNull);
   });
+  testWidgets('状态栏区域延续页面背景，标题避让安全区，浅深色和二级页系统栏同步', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(top: 36, bottom: 24);
+    tester.view.viewPadding = const FakeViewPadding(top: 36, bottom: 24);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+    addTearDown(tester.view.resetViewPadding);
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('设置').last);
+    await tester.pumpAndSettle();
+
+    void verifyBars(Brightness icons) {
+      final style = SystemChrome.latestStyle!;
+      expect(style.statusBarColor, Colors.transparent);
+      expect(style.systemStatusBarContrastEnforced, isFalse);
+      expect(style.statusBarIconBrightness, icons);
+      expect(style.systemNavigationBarColor, Colors.transparent);
+      expect(style.systemNavigationBarIconBrightness, icons);
+      expect(style.systemNavigationBarContrastEnforced, isFalse);
+    }
+
+    for (final dark in [false, true]) {
+      store.updatePreferences((p) {
+        p.theme = dark ? 'dark' : 'light';
+        p.pureBlack = dark;
+      });
+      await tester.pumpAndSettle();
+      final settings = find.byWidgetPredicate(
+        (widget) => widget.runtimeType.toString() == '_SettingsPage',
+      );
+      final canvas = find
+          .descendant(of: settings, matching: find.byType(ColoredBox))
+          .first;
+      expect(
+        tester.getTopLeft(canvas).dy,
+        0,
+        reason: '背景必须覆盖状态栏，不能被外层 SafeArea 推到状态栏下方',
+      );
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('pinned-backdrop-设置'))).dy,
+        0,
+      );
+      if (dark) expect(tester.widget<ColoredBox>(canvas).color, Colors.black);
+      final title = find.byKey(const ValueKey('pinned-heading-设置'));
+      final titlePosition = tester.getTopLeft(title);
+      expect(titlePosition.dy, greaterThanOrEqualTo(36));
+      verifyBars(dark ? Brightness.light : Brightness.dark);
+      await tester.drag(
+        find.descendant(of: settings, matching: find.byType(ListView)).first,
+        const Offset(0, -180),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(title), titlePosition);
+      await tester.ensureVisible(find.text('关于'));
+      await tester.tap(find.text('关于'));
+      await tester.pumpAndSettle();
+      verifyBars(dark ? Brightness.light : Brightness.dark);
+      expect(tester.getTopLeft(find.byType(AppBar)).dy, 0);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      verifyBars(dark ? Brightness.light : Brightness.dark);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('内容滚动后标题保持原位，顶栏遮罩平滑衰减到透明', (tester) async {
     tester.view.physicalSize = const Size(390, 668);
     tester.view.devicePixelRatio = 1;

@@ -36,6 +36,22 @@ part 'practice.dart';
 part 'learning_settings.dart';
 part 'statistics.dart';
 
+SystemUiOverlayStyle _systemBarStyle(Brightness brightness) {
+  final icons = brightness == Brightness.dark
+      ? Brightness.light
+      : Brightness.dark;
+  return SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarBrightness: brightness,
+    statusBarIconBrightness: icons,
+    systemStatusBarContrastEnforced: false,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarDividerColor: Colors.transparent,
+    systemNavigationBarIconBrightness: icons,
+    systemNavigationBarContrastEnforced: false,
+  );
+}
+
 class OpenMarkjiApp extends StatelessWidget {
   const OpenMarkjiApp({super.key, required this.store});
   final AppStore store;
@@ -74,6 +90,7 @@ class OpenMarkjiApp extends StatelessWidget {
               fontFamily: p.fontFamily == 'system' ? null : p.fontFamily,
             ),
             appBarTheme: AppBarTheme(
+              systemOverlayStyle: _systemBarStyle(brightness),
               backgroundColor: scheme.surfaceContainerLowest,
               surfaceTintColor: Colors.transparent,
               scrolledUnderElevation: 0,
@@ -139,22 +156,25 @@ class OpenMarkjiApp extends StatelessWidget {
             _ => ThemeMode.system,
           },
           home: _Shell(store: store),
-          builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              textScaler: TextScaler.linear(
-                MediaQuery.textScalerOf(context).scale(1) * p.textScale,
+          builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+            value: _systemBarStyle(Theme.of(context).brightness),
+            child: MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(
+                  MediaQuery.textScalerOf(context).scale(1) * p.textScale,
+                ),
               ),
-            ),
-            child: LiquidGlassScope(
-              dockOpacity: p.dockOpacity,
-              dockBlur: p.dockBlur,
-              enabled: p.liquidGlass != 'none',
-              quality: p.liquidGlass == 'standard'
-                  ? LiquidGlassQuality.standard
-                  : LiquidGlassQuality.ultra,
-              child: LiquidGlassHost(
+              child: LiquidGlassScope(
+                dockOpacity: p.dockOpacity,
+                dockBlur: p.dockBlur,
                 enabled: p.liquidGlass != 'none',
-                child: child!,
+                quality: p.liquidGlass == 'standard'
+                    ? LiquidGlassQuality.standard
+                    : LiquidGlassQuality.ultra,
+                child: LiquidGlassHost(
+                  enabled: p.liquidGlass != 'none',
+                  child: child!,
+                ),
               ),
             ),
           ),
@@ -254,6 +274,7 @@ class _ShellState extends State<_Shell> {
             child: Stack(
               children: [
                 SafeArea(
+                  top: false,
                   bottom: false,
                   child: AnimatedSwitcher(
                     duration: _duration(context, 300),
