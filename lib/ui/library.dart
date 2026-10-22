@@ -122,13 +122,12 @@ class _LibraryPageState extends State<_LibraryPage> {
                 ),
               ),
             ),
-            if (decks.isNotEmpty)
-              OutlinedButton.icon(
-                onPressed: () =>
-                    _push(context, _ImportPage(store: widget.store)),
-                icon: const Icon(Icons.file_download_outlined),
-                label: const Text('导入墨墨文本'),
-              ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () => _push(context, _ImportPage(store: widget.store)),
+              icon: const Icon(Icons.file_download_outlined),
+              label: const Text('导入墨墨文本'),
+            ),
           ],
         );
         return wide
@@ -601,7 +600,7 @@ class _DeckPageState extends State<_DeckPage> {
               }
               if (v == 'export' || v == 'plain') {
                 final rows = await widget.store.db.rows(
-                  'SELECT source FROM cards WHERE deck_id=? ORDER BY rowid',
+                  'SELECT cards.source FROM cards JOIN card_decks ON card_decks.card_id=cards.id WHERE card_decks.deck_id=? ORDER BY cards.rowid',
                   [widget.deckId],
                 );
                 final content = rows

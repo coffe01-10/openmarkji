@@ -13,7 +13,10 @@ void main() {
   late AppStore store;
   final now = DateTime(2026, 10, 22, 12);
   setUp(() async {
-    store = AppStore(AppDatabase(NativeDatabase.memory()));
+    store = AppStore(
+      AppDatabase(NativeDatabase.memory()),
+      loadOfficialDecks: false,
+    );
     await store.initialize(legacy: {});
     await store.putDeck(DeckData(id: 'd', name: '测试'));
   });

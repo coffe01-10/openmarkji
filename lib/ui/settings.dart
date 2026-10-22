@@ -124,6 +124,28 @@ class _SettingsLink extends StatefulWidget {
 class _SettingsLinkState extends State<_SettingsLink> {
   final _key = GlobalKey();
   double? _holdHeight;
+  Animation<double>? _closing;
+  late final _restoreRow = _restoreCoveredRow;
+
+  @override
+  void dispose() {
+    _closing?.removeListener(_restoreRow);
+    super.dispose();
+  }
+
+  /// 收回接近原位时，卡片仍然盖住这一行。先放回真实行，
+  /// 展开层卸掉的那一帧下面就有内容，不会露出空白。
+  void _restoreCoveredRow() {
+    final animation = _closing;
+    if (animation == null ||
+        animation.status != AnimationStatus.reverse ||
+        animation.value > .08) {
+      return;
+    }
+    animation.removeListener(_restoreRow);
+    _closing = null;
+    if (mounted && _holdHeight != null) setState(() => _holdHeight = null);
+  }
 
   Rect? _measure() {
     final box = _key.currentContext?.findRenderObject() as RenderBox?;
@@ -192,9 +214,12 @@ class _SettingsLinkState extends State<_SettingsLink> {
       transition: disabled ? Duration.zero : const Duration(milliseconds: 300),
     );
     await navigator.push(route);
+    _closing = route.animation?..addListener(_restoreRow);
     // push 的 Future 在开始返回时完成；此时动画中的行仍然可见。
     await route.completed;
-    if (mounted) setState(() => _holdHeight = null);
+    _closing?.removeListener(_restoreRow);
+    _closing = null;
+    if (mounted && _holdHeight != null) setState(() => _holdHeight = null);
   }
 
   @override
@@ -276,7 +301,7 @@ class _SettingsTile extends StatelessWidget {
   }
 }
 
-/// 行矩形展开到整页。节奏对齐 FlClash `_OpenContainerRoute`：300ms，
+/// 行矩形展开到整页。沿用 GPL-3.0 上游 `_OpenContainerRoute` 的节奏：300ms，
 /// fastOutSlowIn；打开页在进入的 0.2-0.4 淡入，返回时在 0.8-0.6 淡出。
 /// 连续点另一行时，旧路由反向收起和新路由正向展开同时进行。
 class _RowExpandRoute extends PageRoute<void> {
@@ -295,7 +320,7 @@ class _RowExpandRoute extends PageRoute<void> {
   final Duration transition;
 
   /// 上一段动画的方向。中途被反向打断时，曲线要沿用打断前的方向，
-  /// 对齐 FlClash `_transitionWasInterrupted`：只有完整走完再折返才换曲线。
+  /// 沿用上游 `_transitionWasInterrupted`：只有完整走完再折返才换曲线。
   AnimationStatus? _lastStatus;
   AnimationStatus? _currentStatus;
 

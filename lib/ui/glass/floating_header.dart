@@ -1,5 +1,5 @@
-// Adapted from FlClash lib/ui/sheet_header.dart, GPL-3.0.
-// Source and modification notices: third_party/FlClash/NOTICE.md.
+// Adapted from the GPL-3.0 upstream lib/ui/sheet_header.dart.
+// Source and modification notices: third_party/GPL-3.0/NOTICE.md.
 import 'package:flutter/material.dart';
 
 /// Fades the surface behind [child] toward its foot so content reads through,

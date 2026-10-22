@@ -4,7 +4,7 @@
 
 OpenMarkji is an offline-first Flutter flashcard app. `lib/main.dart` initializes the app; `lib/ui/` contains screens, themes, and shared controls. Several screen files are parts of `lib/ui/app.dart`, so preserve their library structure. `lib/data/app_store.dart` owns active persistence and study-session behavior, backed by Drift/SQLite. `lib/domain/` defines entities, `lib/algorithms/` implements MMX scheduling, and `lib/content/` handles Markji parsing and imports. Legacy demos in `bin/`, `lib/models/`, and `lib/services/scheduler.dart` are not the active application stack.
 
-Tests live in `test/`; import examples and documentation are in `examples/` and `docs/`. Platform integration lives in `android/`, `web/`, `windows/`, and `linux/`. Glass shaders are in `shaders/`; adapted FlClash components and notices are in `lib/ui/flclash/` and `third_party/FlClash/`. Do not edit generated `build/` output.
+Tests live in `test/`; import examples and documentation are in `examples/` and `docs/`. Platform integration lives in `android/`, `web/`, `windows/`, and `linux/`. Glass shaders are in `shaders/`; GPL-3.0 components and notices are in `lib/ui/glass/` and `third_party/GPL-3.0/`. Do not edit generated `build/` output.
 
 ## Build, Test, and Development Commands
 
@@ -23,7 +23,7 @@ Use Dart formatting, two-space indentation, `snake_case.dart` filenames, `UpperC
 
 ## UI Style
 
-Keep UI styling aligned with FlClash: surface hierarchy, superellipse corners, grouped settings, typography, spacing, liquid-glass materials, and motion. Reuse `lib/ui/flclash/` and shared controls in `lib/ui/design.dart`. Apply appearance preferences consistently across new screens and controls; preserve light/dark themes and reduced-motion support.
+Keep the shared UI style consistent: surface hierarchy, superellipse corners, grouped settings, typography, spacing, liquid-glass materials, and motion. Reuse `lib/ui/glass/` and shared controls in `lib/ui/design.dart`. Apply appearance preferences consistently across new screens and controls; preserve light/dark themes and reduced-motion support.
 
 ## Testing Guidelines
 
@@ -31,7 +31,7 @@ Use `flutter_test` and name files `*_test.dart`. Add focused regressions for sch
 
 ## Commit & Pull Request Guidelines
 
-History uses concise imperative subjects, such as `Improve editor layout, formatting, and interaction`; Conventional Commit prefixes are not required. Keep commits focused. PR descriptions should explain behavior changes, reference relevant issues, report validation and environment limitations, and include screenshots for UI changes. Preserve FlClash licenses, attribution, and modification notices.
+History uses concise imperative subjects, such as `Improve editor layout, formatting, and interaction`; Conventional Commit prefixes are not required. Keep commits focused. PR descriptions should explain behavior changes, reference relevant issues, report validation and environment limitations, and include screenshots for UI changes. Preserve upstream licenses, attribution, and modification notices.
 
 ## Agent Working Practices
 

@@ -12,14 +12,17 @@ import 'package:openmarkji/data/database.dart';
 import 'package:openmarkji/domain/entities.dart';
 import 'package:openmarkji/ui/app.dart';
 import 'package:openmarkji/ui/content_view.dart';
-import 'package:openmarkji/ui/flclash/liquid_glass.dart';
-import 'package:openmarkji/ui/flclash/navigation_dock.dart';
-import 'package:openmarkji/ui/flclash/popup.dart';
+import 'package:openmarkji/ui/glass/liquid_glass.dart';
+import 'package:openmarkji/ui/glass/navigation_dock.dart';
+import 'package:openmarkji/ui/glass/popup.dart';
 
 void main() {
   late AppStore store;
   setUp(() async {
-    store = AppStore(AppDatabase(NativeDatabase.memory()));
+    store = AppStore(
+      AppDatabase(NativeDatabase.memory()),
+      loadOfficialDecks: false,
+    );
     await store.initialize(legacy: {});
   });
   tearDown(() async {
@@ -954,6 +957,15 @@ void main() {
     expect(tester.state(page), same(state));
     // 返回动画结束前，只应绘制动画中的那一行。
     expect(find.text('外观与阅读'), findsNWidgets(2));
+    await tester.pump(const Duration(milliseconds: 170));
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget.runtimeType.toString() == '_RowExpandTransition',
+      ),
+      findsOneWidget,
+    );
+    // 卡片还盖着这一行时，列表里的真实行已经放回，收回结束不会露出空白。
+    expect(find.text('外观与阅读').hitTestable(), findsOneWidget);
     await tester.pumpAndSettle();
     expect(find.text('外观与阅读'), findsOneWidget);
     await tester.tap(find.text('外观与阅读'));
@@ -1134,7 +1146,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('FlClash 菜单从右侧值控件展开，选值后保存并收回', (tester) async {
+  testWidgets('玻璃菜单从右侧值控件展开，选值后保存并收回', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);

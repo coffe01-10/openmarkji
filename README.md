@@ -96,4 +96,4 @@ node tool/preview.mjs
 
 ## 许可证
 
-[MIT](LICENSE) · 保留 FlClash 组件的原始许可与修改说明。
+[GPL-3.0 协议原文](third_party/GPL-3.0/LICENSE) · [版权及修改说明](third_party/GPL-3.0/NOTICE.md)

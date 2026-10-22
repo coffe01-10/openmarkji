@@ -1,5 +1,5 @@
 // ignore_for_file: prefer_initializing_formals
-// Adapted from FlClash (GPL-3.0). See third_party/FlClash/NOTICE.md.
+// Adapted from GPL-3.0 upstream code. See third_party/GPL-3.0/NOTICE.md.
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';

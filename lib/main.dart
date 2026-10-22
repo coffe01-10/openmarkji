@@ -9,7 +9,7 @@ import 'ui/app.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   LicenseRegistry.addLicense(() async* {
-    final license = await rootBundle.loadString('third_party/FlClash/LICENSE');
+    final license = await rootBundle.loadString('third_party/GPL-3.0/LICENSE');
     yield LicenseEntryWithLineBreaks(
       const ['GPL-3.0'],
       'GNU General Public License v3.0（GPL-3.0）\n\n'

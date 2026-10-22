@@ -9,14 +9,18 @@ import '../algorithms/mmx.dart';
 import '../algorithms/mmx5.dart';
 import '../algorithms/mmx6.dart';
 import '../content/markji.dart';
+import '../content/official_decks.dart';
 import '../domain/entities.dart';
 import '../domain/statistics.dart';
 import 'connection.dart';
 import 'database.dart';
 
 class AppStore extends ChangeNotifier {
-  AppStore(this.db);
+  AppStore(this.db, {this.loadOfficialDecks = true});
   final AppDatabase db;
+
+  /// 测试可关闭，避免每次建库都读入整套官方词表。
+  final bool loadOfficialDecks;
   Preferences preferences = Preferences();
   final _changes = StreamController<void>.broadcast();
   int revision = 0;
@@ -103,6 +107,7 @@ class AppStore extends ChangeNotifier {
         await setSetting('migrated', '1');
       });
     }
+    if (loadOfficialDecks) await _ensureOfficialDecks();
     preferences = Preferences.fromJson(
       decodeObject(await setting('preferences') ?? '{}'),
     );
@@ -191,10 +196,32 @@ class AppStore extends ChangeNotifier {
     );
   }
 
-  Future<List<DeckData>> decks() async =>
-      (await db.rows('SELECT payload FROM decks ORDER BY rowid'))
-          .map((r) => DeckData.fromJson(decodeObject(r['payload'])))
-          .toList();
+  Future<List<DeckData>> decks() async {
+    final rows = await db.rows('SELECT payload FROM decks ORDER BY rowid');
+    final indexed = <({int order, DeckData deck})>[];
+    for (var i = 0; i < rows.length; i++) {
+      final deck = DeckData.fromJson(decodeObject(rows[i]['payload']));
+      if (deck.id == officialLibraryDeckId) continue;
+      indexed.add((order: i, deck: deck));
+    }
+    final officialOrder = {
+      for (var i = 0; i < officialDecks.length; i++) officialDecks[i].id: i,
+    };
+    indexed.sort((a, b) {
+      final group = (a.deck.group == officialDeckGroup ? 1 : 0).compareTo(
+        b.deck.group == officialDeckGroup ? 1 : 0,
+      );
+      if (group != 0) return group;
+      if (a.deck.group == officialDeckGroup) {
+        return (officialOrder[a.deck.id] ?? 0).compareTo(
+          officialOrder[b.deck.id] ?? 0,
+        );
+      }
+      return a.order.compareTo(b.order);
+    });
+    return indexed.map((entry) => entry.deck).toList();
+  }
+
   Future<DeckData?> deck(String id) async {
     final r = await db.rows('SELECT payload FROM decks WHERE id=?', [id]);
     return r.isEmpty
@@ -217,14 +244,18 @@ class AppStore extends ChangeNotifier {
         : StudyCard.fromJson(decodeObject(r.first['payload']));
   }
 
-  Future<void> putCard(StudyCard card, {bool announce = true}) async {
+  Future<void> putCard(
+    StudyCard card, {
+    bool announce = true,
+    String? plainText,
+  }) async {
     await db.customStatement(
       'INSERT OR REPLACE INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?)',
       [
         card.id,
         card.deckId,
         card.source,
-        MarkjiParser().parse(card.source).plainText,
+        plainText ?? MarkjiParser().parse(card.source).plainText,
         card.chapter,
         jsonEncode(card.tags),
         card.plan,
@@ -234,6 +265,10 @@ class AppStore extends ChangeNotifier {
         jsonEncode(card.toJson()),
       ],
     );
+    await db.customStatement('INSERT OR IGNORE INTO card_decks VALUES (?,?)', [
+      card.id,
+      card.deckId,
+    ]);
     if (announce) {
       await clearSetting('undo');
       changed();
@@ -251,7 +286,8 @@ class AppStore extends ChangeNotifier {
     int offset = 0,
     int limit = 60,
   }) async {
-    var sql = 'SELECT payload FROM cards WHERE deck_id=?';
+    var sql =
+        'SELECT cards.payload FROM cards JOIN card_decks ON card_decks.card_id=cards.id WHERE card_decks.deck_id=?';
     final args = <Object>[deckId];
     if (search.isNotEmpty) {
       sql += ' AND (instr(lower(search_text),lower(?))>0 OR instr(lower(tags),lower(?))>0)';
@@ -276,7 +312,8 @@ class AppStore extends ChangeNotifier {
       // replaces that evidence or changes its next scheduled review.
       sql += " AND (SELECT grade FROM reviews WHERE card_id=cards.id AND kind='formal' ORDER BY reviewed_at DESC,rowid DESC LIMIT 1) IN (2,3)";
     }
-    sql += ' ORDER BY ${randomOrder ? 'random()' : 'rowid'} LIMIT ? OFFSET ?';
+    sql +=
+        ' ORDER BY ${randomOrder ? 'random()' : 'cards.rowid'} LIMIT ? OFFSET ?';
     args.addAll([limit, offset]);
     return (await db.rows(
       sql,
@@ -368,12 +405,12 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<List<String>> tags(String deckId) async => (await db.rows(
-    'SELECT DISTINCT value FROM cards,json_each(cards.tags) WHERE deck_id=? ORDER BY value',
+    'SELECT DISTINCT value FROM cards JOIN card_decks ON card_decks.card_id=cards.id, json_each(cards.tags) WHERE card_decks.deck_id=? ORDER BY value',
     [deckId],
   )).map((r) => r['value'] as String).toList();
   Future<Map<String, int>> counts(String deckId) async {
     final r = (await db.rows(
-      "SELECT count(*) total, sum(plan='active') active, sum(plan='library') library, sum(plan='paused') paused FROM cards WHERE deck_id=?",
+      "SELECT count(*) total, sum(plan='active') active, sum(plan='library') library, sum(plan='paused') paused FROM cards JOIN card_decks ON card_decks.card_id=cards.id WHERE card_decks.deck_id=?",
       [deckId],
     )).first;
     return r.map((k, v) => MapEntry(k, (v as num? ?? 0).toInt()));
@@ -403,6 +440,9 @@ class AppStore extends ChangeNotifier {
     await db.transaction(() async {
       for (final id in ids) {
         await db.customStatement('DELETE FROM cards WHERE id=?', [id]);
+        await db.customStatement('DELETE FROM card_decks WHERE card_id=?', [
+          id,
+        ]);
         await db.customStatement('DELETE FROM reviews WHERE card_id=?', [id]);
       }
       await clearSetting('undo');
@@ -413,10 +453,14 @@ class AppStore extends ChangeNotifier {
   Future<void> deleteDeck(String id) async {
     await db.transaction(() async {
       await db.customStatement(
-        'DELETE FROM reviews WHERE card_id IN (SELECT id FROM cards WHERE deck_id=?)',
-        [id],
+        'DELETE FROM reviews WHERE card_id IN (SELECT card_id FROM card_decks WHERE deck_id=? AND card_id NOT IN (SELECT card_id FROM card_decks WHERE deck_id!=?))',
+        [id, id],
       );
-      await db.customStatement('DELETE FROM cards WHERE deck_id=?', [id]);
+      await db.customStatement(
+        'DELETE FROM cards WHERE id IN (SELECT card_id FROM card_decks WHERE deck_id=? AND card_id NOT IN (SELECT card_id FROM card_decks WHERE deck_id!=?))',
+        [id, id],
+      );
+      await db.customStatement('DELETE FROM card_decks WHERE deck_id=?', [id]);
       await db.customStatement('DELETE FROM decks WHERE id=?', [id]);
       await clearSetting('undo');
     });
@@ -428,6 +472,8 @@ class AppStore extends ChangeNotifier {
     List<String> sources, {
     String chapter = '',
     bool keepDuplicates = false,
+    bool plainSource = false,
+    bool announce = true,
   }) async {
     final d = (await deck(deckId))!;
     final existing = (await db.rows(
@@ -451,6 +497,7 @@ class AppStore extends ChangeNotifier {
             algorithm: d.algorithm,
           ),
           announce: false,
+          plainText: plainSource ? source.replaceAll('---', '答案') : null,
         );
         existing.add(source);
         added++;
@@ -465,7 +512,7 @@ class AppStore extends ChangeNotifier {
         );
       }
     });
-    changed();
+    if (announce) changed();
     return (added: added, skipped: skipped);
   }
 
@@ -511,7 +558,7 @@ class AppStore extends ChangeNotifier {
       for (final d in await decks()) {
         final studied =
             (await db.rows(
-                  'SELECT count(*) n FROM cards WHERE deck_id=? AND first_learned>=? AND first_learned<?',
+                  'SELECT count(*) n FROM cards JOIN card_decks ON card_decks.card_id=cards.id WHERE card_decks.deck_id=? AND first_learned>=? AND first_learned<?',
                   [
                     d.id,
                     dayStart(now).millisecondsSinceEpoch,
@@ -520,14 +567,15 @@ class AppStore extends ChangeNotifier {
                 )).first['n']
                 as int;
         final fresh = await db.rows(
-          "SELECT id FROM cards WHERE deck_id=? AND plan='active' AND first_learned IS NULL ORDER BY enrolled_at,rowid LIMIT ?",
+          "SELECT cards.id FROM cards JOIN card_decks ON card_decks.card_id=cards.id WHERE card_decks.deck_id=? AND plan='active' AND first_learned IS NULL ORDER BY enrolled_at,cards.rowid LIMIT ?",
           [d.id, math.max(0, d.newLimit - studied)],
         );
         final allowed = fresh.map((e) => e['id']).toSet();
         // Reducing the daily limit removes new cards that have not been studied yet.
-        final deckIds = (await db.rows('SELECT id FROM cards WHERE deck_id=?', [
-          d.id,
-        ])).map((e) => e['id']).toSet();
+        final deckIds = (await db.rows(
+          'SELECT card_id FROM card_decks WHERE deck_id=?',
+          [d.id],
+        )).map((e) => e['card_id']).toSet();
         queue.removeWhere(
           (e) =>
               e.stage == 'new' &&
@@ -1080,6 +1128,117 @@ class AppStore extends ChangeNotifier {
       '[P#H1#微积分 · 基本定理]\n如果 F 是 f 的一个原函数，定积分如何计算？\n---\n[E##\\int_a^b f(x)\\,dx = F(b)-F(a)]',
       '[P#H1#一个小小的填空]\n记忆不是一次完成的，而是在[F#1#恰当的时间]进行[F#2#主动回忆]。\n---\n点开同一编号的空格会一起揭晓。所有空格共用这张卡的学习进度。',
     ], chapter: '开始使用');
+  }
+
+  /// 四套考试牌组共用一份按单词去重的词库，每副牌组仍列出自己的完整词表。
+  Future<void> _ensureOfficialDecks() async {
+    var changedDecks = false;
+    final oldIds = officialDecks.map((deck) => deck.id).toList();
+    final oldCount =
+        (await db.rows(
+              'SELECT COUNT(*) AS n FROM cards WHERE deck_id IN (?,?,?,?)',
+              oldIds,
+            )).first['n']
+            as int;
+    if (oldCount > 0) {
+      await db.transaction(() async {
+        await db.customStatement(
+          'DELETE FROM reviews WHERE card_id IN (SELECT id FROM cards WHERE deck_id IN (?,?,?,?))',
+          oldIds,
+        );
+        await db.customStatement(
+          'DELETE FROM card_decks WHERE card_id IN (SELECT id FROM cards WHERE deck_id IN (?,?,?,?))',
+          oldIds,
+        );
+        await db.customStatement(
+          'DELETE FROM cards WHERE deck_id IN (?,?,?,?)',
+          oldIds,
+        );
+      });
+      changedDecks = true;
+    }
+    final library = await loadSharedOfficialLibrary();
+    final existingCards = await db.rows(
+      'SELECT id, source FROM cards WHERE deck_id=?',
+      [officialLibraryDeckId],
+    );
+    final byKey = <String, String>{};
+    for (final row in existingCards) {
+      byKey[officialCardKey(row['source'] as String)] = row['id'] as String;
+    }
+    final missing = library.cards.keys.where((key) => !byKey.containsKey(key));
+    if (missing.isNotEmpty) {
+      final holder = await deck(officialLibraryDeckId);
+      if (holder == null) {
+        await putDeck(
+          DeckData(
+            id: officialLibraryDeckId,
+            name: '官方词库',
+            group: '',
+            newLimit: preferences.defaultLimit,
+            algorithm: preferences.defaultAlgorithm,
+          ),
+          announce: false,
+        );
+      }
+      await db.transaction(() async {
+        for (final key in missing) {
+          final id = 'official_$key';
+          await putCard(
+            StudyCard(
+              id: id,
+              deckId: officialLibraryDeckId,
+              source: library.cards[key]!,
+              algorithm: preferences.defaultAlgorithm,
+            ),
+            announce: false,
+            plainText: library.cards[key]!.replaceAll('---', '答案'),
+          );
+          byKey[key] = id;
+        }
+      });
+      changedDecks = true;
+    }
+    for (final official in officialDecks) {
+      final existing = await deck(official.id);
+      if (existing == null ||
+          existing.group != officialDeckGroup ||
+          existing.name != official.name ||
+          existing.description.isNotEmpty) {
+        await putDeck(
+          DeckData(
+            id: official.id,
+            name: official.name,
+            group: officialDeckGroup,
+            newLimit: existing?.newLimit ?? preferences.defaultLimit,
+            algorithm: existing?.algorithm ?? preferences.defaultAlgorithm,
+            params: existing?.params ?? const [],
+            chapters: existing?.chapters ?? const [],
+          ),
+          announce: false,
+        );
+        changedDecks = true;
+      }
+      final linked = (await db.rows(
+        'SELECT card_id FROM card_decks WHERE deck_id=?',
+        [official.id],
+      )).map((row) => row['card_id'] as String).toSet();
+      final wanted = library.membership[official.id]!
+          .map((key) => byKey[key]!)
+          .toSet();
+      final absent = wanted.difference(linked);
+      if (absent.isEmpty) continue;
+      await db.transaction(() async {
+        for (final id in absent) {
+          await db.customStatement(
+            'INSERT OR IGNORE INTO card_decks VALUES (?,?)',
+            [id, official.id],
+          );
+        }
+      });
+      changedDecks = true;
+    }
+    if (changedDecks) changed();
   }
 
   @override

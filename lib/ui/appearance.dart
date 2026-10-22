@@ -1,6 +1,6 @@
 part of 'app.dart';
 
-// Appearance layout follows FlClash's ThemeView; see third_party/FlClash.
+// Appearance layout follows the GPL-3.0 upstream; see third_party/GPL-3.0.
 const _navigationDestinations = [
   NavigationDockDestination(glyph: Icons.wb_sunny_outlined, label: '今日'),
   NavigationDockDestination(glyph: Icons.layers_outlined, label: '牌组'),

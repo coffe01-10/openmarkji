@@ -6,7 +6,7 @@ import 'connection.dart';
 class AppDatabase extends GeneratedDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? openConnection());
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
   @override
   Iterable<TableInfo<Table, Object?>> get allTables => const [];
   @override
@@ -25,8 +25,20 @@ class AppDatabase extends GeneratedDatabase {
         'CREATE INDEX reviews_day ON reviews(kind, reviewed_at)',
         'CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
         'CREATE TABLE media (id TEXT PRIMARY KEY, name TEXT NOT NULL, bytes BLOB NOT NULL)',
+        'CREATE TABLE card_decks (card_id TEXT NOT NULL, deck_id TEXT NOT NULL, PRIMARY KEY (card_id, deck_id))',
+        'CREATE INDEX card_decks_deck ON card_decks(deck_id, card_id)',
       ]) {
         await customStatement(statement);
+      }
+    },
+    onUpgrade: (migrator, from, to) async {
+      if (from < 2) {
+        await customStatement(
+          'CREATE TABLE IF NOT EXISTS card_decks (card_id TEXT NOT NULL, deck_id TEXT NOT NULL, PRIMARY KEY (card_id, deck_id))',
+        );
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS card_decks_deck ON card_decks(deck_id, card_id)',
+        );
       }
     },
   );

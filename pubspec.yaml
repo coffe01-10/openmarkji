@@ -70,7 +70,8 @@ flutter:
   shaders:
     - shaders/liquid_glass.frag
   assets:
-    - third_party/FlClash/LICENSE
+    - third_party/GPL-3.0/LICENSE
+    - assets/vocabulary/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -1,4 +1,4 @@
-// OpenMarkji adapters for the FlClash components in this directory.
+// OpenMarkji adapters for the GPL-3.0 components in this directory.
 import 'package:flutter/material.dart';
 
 extension GlassContext on BuildContext {

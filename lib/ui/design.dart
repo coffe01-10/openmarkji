@@ -35,7 +35,7 @@ class _GlassSurface extends StatelessWidget {
   }
 }
 
-/// FlClash TonalButtonGroup 的按压结构：整块玻璃共用一个弹性变换。
+/// GPL-3.0 上游 TonalButtonGroup 的按压结构：整块玻璃共用一个弹性变换。
 class _GlassGroup extends StatefulWidget {
   const _GlassGroup({required this.child, this.pill = false});
   final Widget child;
@@ -71,7 +71,7 @@ class _GlassGroupState extends State<_GlassGroup> {
   );
 }
 
-/// FlClash 工具栏按钮的 44 dp 胶囊；组内没有额外边距或分隔线。
+/// 工具栏按钮的 44 dp 胶囊；组内没有额外边距或分隔线。
 class _GlassToolbar extends StatelessWidget {
   const _GlassToolbar({required this.children});
   final List<Widget> children;
@@ -419,7 +419,7 @@ class _BrandMark extends StatelessWidget {
   }
 }
 
-/// 标题浮于内容之上；复用 FlClash 顶栏的无硬边渐变遮罩。
+/// 标题浮于内容之上；复用 GPL-3.0 上游顶栏的无硬边渐变遮罩。
 class _PinnedPage extends StatefulWidget {
   const _PinnedPage({
     required this.title,

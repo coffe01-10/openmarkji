@@ -1,4 +1,4 @@
-// Adapted from FlClash (GPL-3.0). See third_party/FlClash/NOTICE.md.
+// Adapted from GPL-3.0 upstream code. See third_party/GPL-3.0/NOTICE.md.
 import 'package:flutter/animation.dart';
 import 'package:flutter/physics.dart';
 

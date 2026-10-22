@@ -14,7 +14,7 @@
 
 **Offline-first open-source flashcard app**. Organize knowledge with Markji syntax, select cards to join the plan, then complete daily reviews and new learning with MMX scheduling.
 
-![App overview: complete flow from import to review](assets/design.svg)
+![App overview: complete flow from import to review](assets/design-en.svg)
 
 ## Why OpenMarkji
 
@@ -96,4 +96,4 @@ Scheduling intervals use actual time differences between formal reviews; same-da
 
 ## License
 
-[MIT](LICENSE) · Preserves original licenses and modification notices for FlClash components.
+[GPL-3.0 license text](third_party/GPL-3.0/LICENSE) · [Copyright and modification notices](third_party/GPL-3.0/NOTICE.md)

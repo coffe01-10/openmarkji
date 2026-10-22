@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openmarkji/algorithms/mmx.dart';
+import 'package:flutter/services.dart';
+import 'package:openmarkji/content/official_decks.dart';
 import 'package:openmarkji/data/app_store.dart';
 import 'package:openmarkji/data/database.dart';
 import 'package:openmarkji/domain/entities.dart';
@@ -12,7 +15,10 @@ void main() {
   late AppStore store;
   final now = DateTime(2026, 10, 21, 9);
   setUp(() async {
-    store = AppStore(AppDatabase(NativeDatabase.memory()));
+    store = AppStore(
+      AppDatabase(NativeDatabase.memory()),
+      loadOfficialDecks: false,
+    );
     await store.initialize(legacy: {});
     await store.putDeck(DeckData(id: 'd', name: '学习', newLimit: 2));
   });
@@ -255,8 +261,57 @@ void main() {
     await store.restore(recovery);
     expect(await store.card('later'), isNotNull);
   });
+  test('官方词库在启动时进入官方分类并保留在资料库', () async {
+    officialDeckReader = (asset) async => File(asset).readAsStringSync();
+    addTearDown(() => officialDeckReader = rootBundle.loadString);
+    store.dispose();
+    await store.db.close();
+    store = AppStore(AppDatabase(NativeDatabase.memory()));
+    await store.initialize(legacy: {});
+    final deck = (await store.deck('official-cet4'))!;
+    expect(deck.group, '官方');
+    expect(deck.description, isEmpty);
+    final cet4 = await loadOfficialCards(officialDecks.first);
+    final uniqueCet4 = cet4.map(officialCardKey).toSet();
+    expect((await store.counts(deck.id))['total'], uniqueCet4.length);
+    final cet6Own = (await loadOfficialCards(officialDecks[1]))
+        .map(officialCardKey)
+        .toSet();
+    final cet6Count = (await store.counts('official-cet6'))['total'];
+    expect(cet6Count, {...uniqueCet4, ...cet6Own}.length);
+    expect(cet6Count, greaterThan(uniqueCet4.length));
+    final stored = (await store.cards(deckId: deck.id, limit: 1)).single;
+    expect(stored.plan, 'library');
+    expect(stored.deckId, officialLibraryDeckId);
+    expect(stored.source, contains('\n---\n'));
+    final libraryTotal = (await store.db.rows(
+      'SELECT COUNT(*) AS n FROM cards WHERE deck_id=?',
+      [officialLibraryDeckId],
+    )).first['n'];
+    expect(libraryTotal, lessThan(7508 + 5651 + 9602 + 13477));
+    await store.initialize(legacy: {});
+    expect((await store.counts('official-cet6'))['total'], cet6Count);
+    expect(
+      (await store.db.rows('SELECT COUNT(*) AS n FROM cards WHERE deck_id=?', [
+        officialLibraryDeckId,
+      ])).first['n'],
+      libraryTotal,
+    );
+    final visible = await store.decks();
+    expect(visible.where((d) => d.group == '官方').map((d) => d.id), [
+      'official-cet4',
+      'official-cet6',
+      'official-kaoyan',
+      'official-toefl',
+    ]);
+    expect(visible.any((d) => d.id == officialLibraryDeckId), isFalse);
+  });
+
   test('旧 JSON 一次性迁移，保持 ID 和评分映射', () async {
-    final migrated = AppStore(AppDatabase(NativeDatabase.memory()));
+    final migrated = AppStore(
+      AppDatabase(NativeDatabase.memory()),
+      loadOfficialDecks: false,
+    );
     await migrated.initialize(
       legacy: {
         'decks': jsonEncode([
