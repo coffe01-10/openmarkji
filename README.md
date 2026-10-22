@@ -2,7 +2,7 @@
 
 离线优先的开源记忆卡应用。用墨墨语法整理知识，选择卡片加入计划，再按 MMX 排期完成每天的复习与新学。
 
-Flutter 构建，Android 手机优先；玻璃悬浮 Dock、动态取色、浅深色主题，840px 起使用侧栏与牌组双栏。视觉参考 FlClash，UI 在本项目重新实现。
+Flutter 构建，Android 手机优先；玻璃悬浮 Dock、动态取色、浅深色主题，840px 起使用侧栏与牌组双栏。
 
 | 今日任务 | 公式与复习 | 深色设置 |
 | --- | --- | --- |
@@ -34,7 +34,7 @@ Android 安装包：[1.01 发布页](https://github.com/coffe01-10/openmarkji/re
 
 详细格式和已知边界见 [导入与语法说明](docs/IMPORT.md)。示例文件：[markji-demo.txt](examples/markji-demo.txt)。
 
-设置提供 FlClash 风格的玻璃菜单、全局玻璃透明度与模糊调节、当日重学间隔、学习触感和显示偏好。关于页提供更新检查、协议与数据说明、帮助和反馈报告导出。当前没有在线反馈服务，报告由用户自行分享。
+设置提供玻璃菜单、全局玻璃透明度与模糊调节、当日重学间隔、学习触感和显示偏好。关于页提供更新检查、协议与数据说明、帮助和反馈报告导出。当前没有在线反馈服务，报告由用户自行分享。
 
 学习偏好可以选择 MMX-5.0／MMX-6.0 作为新牌组默认算法，也可统一应用到已有牌组；切换版本时重置该牌组的自定义参数，保留卡片历史和当前复习日期，在下次正式评分时按历史重算。学习量统计按当前计划内卡片的近 7／30／90 个自然日计算，复习均值不包含首次学习、当日重学或专项练习。
 
@@ -98,4 +98,8 @@ Windows 未开启开发者模式时，`flutter pub get` 的桌面插件链接步
 
 媒体字节保存在应用管理的 SQLite 媒体表中，通过 ID 引用，不依赖原图片的外部路径；备份能一起带走。该实现使原生和 Web 使用同一资源模型。
 
-原始代码采用 MIT。液态玻璃、背景采样、导航栏与弹簧动画移植自 [FlClash](https://github.com/chen08209/FlClash)，这些组件采用 GPL-3.0；分发包含它们的完整应用时须遵守 GPL-3.0。来源与改动见 [第三方说明](third_party/FlClash/NOTICE.md)，完整许可证见 [FlClash LICENSE](third_party/FlClash/LICENSE)。墨墨语法参考 [maimemo/memo-skills](https://github.com/maimemo/memo-skills)。Web 数据库运行文件来自 [Drift 2.35.2 官方发布](https://github.com/simolus3/drift/releases/tag/drift-2.35.2)。
+## 开源许可
+
+**GNU General Public License v3.0（GPL-3.0）** 是自由软件许可证。[查看完整协议](third_party/FlClash/LICENSE)，或在应用内通过“关于 → 开源许可 → GPL-3.0”阅读原文。源码保留相应的版权及修改声明。
+
+墨墨语法参考 [maimemo/memo-skills](https://github.com/maimemo/memo-skills)。Web 数据库运行文件来自 [Drift 2.35.2 官方发布](https://github.com/simolus3/drift/releases/tag/drift-2.35.2)。

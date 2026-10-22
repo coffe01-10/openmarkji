@@ -230,7 +230,7 @@ class _PoliciesPage extends StatelessWidget {
                       ),
                       (
                         '开源许可',
-                        '原始项目代码遵循仓库中的 MIT 许可。引入的 FlClash 组件遵循 GPL-3.0；分发包含这些组件的应用时需要遵守其许可要求。完整第三方许可见关于页的开源许可。',
+                        'GNU General Public License v3.0（GPL-3.0）是自由软件许可证。协议原文可在“关于 → 开源许可 → GPL-3.0”中查看。',
                       ),
                     ],
                   ),
