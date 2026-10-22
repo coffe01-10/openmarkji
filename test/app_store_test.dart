@@ -31,6 +31,32 @@ void main() {
     ),
   );
 
+  test('外观选项保存后可恢复，旧设置保留默认值', () async {
+    store.preferences
+      ..liquidGlass = 'standard'
+      ..floatingNavigation = false
+      ..tabAnimation = 'fade'
+      ..pureBlack = true
+      ..colorStyle = 'neutral'
+      ..textScale = 1.2
+      ..fontFamily = 'serif';
+    await store.savePreferences();
+    final restored = Preferences.fromJson(
+      jsonDecode((await store.setting('preferences'))!) as Map<String, dynamic>,
+    );
+    expect(restored.liquidGlass, 'standard');
+    expect(restored.floatingNavigation, isFalse);
+    expect(restored.tabAnimation, 'fade');
+    expect(restored.pureBlack, isTrue);
+    expect(restored.colorStyle, 'neutral');
+    expect(restored.textScale, 1.2);
+    expect(restored.fontFamily, 'serif');
+    final legacy = Preferences.fromJson({'theme': 'dark', 'fontSize': 22});
+    expect(legacy.theme, 'dark');
+    expect(legacy.fontSize, 22);
+    expect(legacy.liquidGlass, 'ultra');
+  });
+
   test('资料库不自动加入计划，重复导入可跳过或保留', () async {
     final one = await store.importCards('d', ['A', 'A', 'B']);
     expect(one.added, 2);

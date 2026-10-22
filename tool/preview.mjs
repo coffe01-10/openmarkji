@@ -6,6 +6,24 @@ const root = resolve('build/web');
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf' };
 const server = http.createServer((request, response) => {
   const url = new URL(request.url, 'http://localhost');
+  if (url.pathname === '/reset') {
+    response.setHeader('Content-Type', 'text/html; charset=utf-8');
+    response.setHeader('Cache-Control', 'no-store');
+    response.end(`<!doctype html><meta charset="utf-8"><title>刷新预览</title><p>正在清掉旧的预览缓存…</p><script>
+      (async () => {
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map((reg) => reg.unregister()));
+        }
+        if (window.caches) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map((key) => caches.delete(key)));
+        }
+        location.replace('/phone');
+      })();
+    </script>`);
+    return;
+  }
   if (url.pathname === '/phone') {
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
     response.end('<!doctype html><meta charset="utf-8"><title>OpenMarkji · 手机预览</title><style>body{margin:0;background:#e6e9ef;display:grid;place-items:center;min-height:100vh}iframe{border:0;border-radius:28px;box-shadow:0 12px 60px #16243b25;background:#fff;width:390px;height:844px;max-width:100vw;max-height:100vh}</style><iframe src="/" title="OpenMarkji 手机界面"></iframe>');

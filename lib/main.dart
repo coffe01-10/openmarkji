@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'data/app_store.dart';
@@ -7,6 +8,11 @@ import 'ui/app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  LicenseRegistry.addLicense(() async* {
+    yield LicenseEntryWithLineBreaks([
+      'FlClash liquid glass and navigation',
+    ], await rootBundle.loadString('third_party/FlClash/LICENSE'));
+  });
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   runApp(const Bootstrap());
 }

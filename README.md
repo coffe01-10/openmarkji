@@ -87,4 +87,4 @@ Windows 未开启开发者模式时，`flutter pub get` 的桌面插件链接步
 
 媒体字节保存在应用管理的 SQLite 媒体表中，通过 ID 引用，不依赖原图片的外部路径；备份能一起带走。该实现使原生和 Web 使用同一资源模型。
 
-License：MIT。墨墨语法参考 [maimemo/memo-skills](https://github.com/maimemo/memo-skills)，视觉参考 [FlClash](https://github.com/chen08209/FlClash)。Web 数据库运行文件来自 [Drift 2.35.2 官方发布](https://github.com/simolus3/drift/releases/tag/drift-2.35.2)。
+原始代码采用 MIT。液态玻璃、背景采样、导航栏与弹簧动画移植自 [FlClash](https://github.com/chen08209/FlClash)，这些组件采用 GPL-3.0；分发包含它们的完整应用时须遵守 GPL-3.0。来源与改动见 [第三方说明](third_party/FlClash/NOTICE.md)，完整许可证见 [FlClash LICENSE](third_party/FlClash/LICENSE)。墨墨语法参考 [maimemo/memo-skills](https://github.com/maimemo/memo-skills)。Web 数据库运行文件来自 [Drift 2.35.2 官方发布](https://github.com/simolus3/drift/releases/tag/drift-2.35.2)。

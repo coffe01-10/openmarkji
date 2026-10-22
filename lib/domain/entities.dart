@@ -149,17 +149,34 @@ class Preferences {
     this.dynamicColor = true,
     this.fontSize = 18,
     this.defaultLimit = 20,
+    this.liquidGlass = 'ultra',
+    this.floatingNavigation = true,
+    this.tabAnimation = 'slide',
+    this.pureBlack = false,
+    this.colorStyle = 'tonalSpot',
+    this.textScale = 1,
+    this.fontFamily = 'system',
   });
   String theme;
   int color, defaultLimit;
   bool dynamicColor;
   double fontSize;
+  String liquidGlass, tabAnimation, colorStyle, fontFamily;
+  bool floatingNavigation, pureBlack;
+  double textScale;
   Map<String, dynamic> toJson() => {
     'theme': theme,
     'color': color,
     'dynamicColor': dynamicColor,
     'fontSize': fontSize,
     'defaultLimit': defaultLimit,
+    'liquidGlass': liquidGlass,
+    'floatingNavigation': floatingNavigation,
+    'tabAnimation': tabAnimation,
+    'pureBlack': pureBlack,
+    'colorStyle': colorStyle,
+    'textScale': textScale,
+    'fontFamily': fontFamily,
   };
   factory Preferences.fromJson(Map<String, dynamic> j) => Preferences(
     theme: j['theme'] ?? 'system',
@@ -167,6 +184,13 @@ class Preferences {
     dynamicColor: j['dynamicColor'] ?? true,
     fontSize: (j['fontSize'] as num? ?? 18).toDouble(),
     defaultLimit: j['defaultLimit'] ?? 20,
+    liquidGlass: j['liquidGlass'] ?? 'ultra',
+    floatingNavigation: j['floatingNavigation'] ?? true,
+    tabAnimation: j['tabAnimation'] ?? 'slide',
+    pureBlack: j['pureBlack'] ?? false,
+    colorStyle: j['colorStyle'] ?? 'tonalSpot',
+    textScale: (j['textScale'] as num? ?? 1).toDouble(),
+    fontFamily: j['fontFamily'] ?? 'system',
   );
 }
 

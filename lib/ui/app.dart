@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:file_picker/file_picker.dart';
@@ -14,12 +13,15 @@ import '../data/app_store.dart';
 import '../data/file_export.dart' as file_export;
 import '../domain/entities.dart';
 import 'content_view.dart';
+import 'flclash/liquid_glass.dart';
+import 'flclash/navigation_dock.dart';
 part 'design.dart';
 part 'home.dart';
 part 'library.dart';
 part 'editor.dart';
 part 'study.dart';
 part 'settings.dart';
+part 'appearance.dart';
 
 class OpenMarkjiApp extends StatelessWidget {
   const OpenMarkjiApp({super.key, required this.store});
@@ -31,19 +33,32 @@ class OpenMarkjiApp extends StatelessWidget {
       builder: (light, dark) {
         final p = store.preferences;
         ThemeData theme(Brightness brightness, ColorScheme? dynamicScheme) {
-          final scheme =
+          final generated =
               (p.dynamicColor ? dynamicScheme : null) ??
               ColorScheme.fromSeed(
                 seedColor: Color(p.color),
                 brightness: brightness,
+                dynamicSchemeVariant: switch (p.colorStyle) {
+                  'vibrant' => DynamicSchemeVariant.vibrant,
+                  'neutral' => DynamicSchemeVariant.neutral,
+                  _ => DynamicSchemeVariant.tonalSpot,
+                },
               );
+          final scheme = p.pureBlack && brightness == Brightness.dark
+              ? generated.copyWith(
+                  surface: Colors.black,
+                  surfaceContainerLowest: Colors.black,
+                )
+              : generated;
           return ThemeData(
             useMaterial3: true,
+            fontFamily: p.fontFamily == 'system' ? null : p.fontFamily,
             colorScheme: scheme,
             scaffoldBackgroundColor: scheme.surfaceContainerLowest,
             textTheme: Typography.material2021().black.apply(
               bodyColor: scheme.onSurface,
               displayColor: scheme.onSurface,
+              fontFamily: p.fontFamily == 'system' ? null : p.fontFamily,
             ),
             appBarTheme: AppBarTheme(
               backgroundColor: scheme.surfaceContainerLowest,
@@ -111,6 +126,23 @@ class OpenMarkjiApp extends StatelessWidget {
             _ => ThemeMode.system,
           },
           home: _Shell(store: store),
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(
+                MediaQuery.textScalerOf(context).scale(1) * p.textScale,
+              ),
+            ),
+            child: LiquidGlassScope(
+              enabled: p.liquidGlass != 'none',
+              quality: p.liquidGlass == 'standard'
+                  ? LiquidGlassQuality.standard
+                  : LiquidGlassQuality.ultra,
+              child: LiquidGlassHost(
+                enabled: p.liquidGlass != 'none',
+                child: child!,
+              ),
+            ),
+          ),
         );
       },
     ),
@@ -126,6 +158,15 @@ class _Shell extends StatefulWidget {
 
 class _ShellState extends State<_Shell> {
   int _index = 0;
+  int _direction = 1;
+  void _select(int index) {
+    if (_index == index) return;
+    setState(() {
+      _direction = index > _index ? 1 : -1;
+      _index = index;
+    });
+  }
+
   static const labels = ['今日', '牌组', '统计', '设置'];
   static const icons = [
     Icons.wb_sunny_outlined,
@@ -169,8 +210,7 @@ class _ShellState extends State<_Shell> {
                       child: NavigationRail(
                         backgroundColor: Colors.transparent,
                         selectedIndex: _index,
-                        onDestinationSelected: (i) =>
-                            setState(() => _index = i),
+                        onDestinationSelected: (i) => _select(i),
                         labelType: NavigationRailLabelType.all,
                         destinations: List.generate(
                           4,
@@ -204,7 +244,27 @@ class _ShellState extends State<_Shell> {
                 SafeArea(
                   bottom: false,
                   child: AnimatedSwitcher(
-                    duration: _duration(context, 220),
+                    duration: _duration(context, 300),
+                    transitionBuilder: (child, animation) =>
+                        widget.store.preferences.tabAnimation == 'fade'
+                        ? FadeTransition(opacity: animation, child: child)
+                        : SlideTransition(
+                            position:
+                                Tween<Offset>(
+                                  begin: Offset(
+                                    (child.key == ValueKey(_index) ? 1 : -1) *
+                                        _direction.toDouble(),
+                                    0,
+                                  ),
+                                  end: Offset.zero,
+                                ).animate(
+                                  CurvedAnimation(
+                                    parent: animation,
+                                    curve: Curves.fastOutSlowIn,
+                                  ),
+                                ),
+                            child: child,
+                          ),
                     child: KeyedSubtree(
                       key: ValueKey(_index),
                       child: pages[_index],
@@ -214,10 +274,23 @@ class _ShellState extends State<_Shell> {
                 if (!wide)
                   Align(
                     alignment: Alignment.bottomCenter,
-                    child: _GlassDock(
-                      index: _index,
-                      onSelect: (i) => setState(() => _index = i),
-                    ),
+                    child: widget.store.preferences.floatingNavigation
+                        ? NavigationDock(
+                            destinations: _navigationDestinations,
+                            selectedIndex: _index,
+                            onSelected: _select,
+                          )
+                        : NavigationBar(
+                            selectedIndex: _index,
+                            onDestinationSelected: _select,
+                            destinations: [
+                              for (var i = 0; i < labels.length; i++)
+                                NavigationDestination(
+                                  icon: Icon(icons[i]),
+                                  label: labels[i],
+                                ),
+                            ],
+                          ),
                   ),
               ],
             ),

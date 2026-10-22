@@ -6,6 +6,8 @@ import 'package:openmarkji/data/database.dart';
 import 'package:openmarkji/domain/entities.dart';
 import 'package:openmarkji/ui/app.dart';
 import 'package:openmarkji/ui/content_view.dart';
+import 'package:openmarkji/ui/flclash/liquid_glass.dart';
+import 'package:openmarkji/ui/flclash/navigation_dock.dart';
 
 void main() {
   late AppStore store;
@@ -93,6 +95,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: '$label 页不应溢出');
     }
+    for (final section in ['外观与阅读', '学习偏好', '资料与备份', '关于']) {
+      await tester.scrollUntilVisible(find.text(section), 120);
+      await tester.tap(find.text(section));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: '$section 不应溢出');
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+    }
   });
 
   testWidgets('文本导入预览可以排除卡片，导入后不自动入计划', (tester) async {
@@ -177,5 +187,131 @@ void main() {
     expect(find.text('甲'), findsOneWidget);
     expect(find.text('乙'), findsOneWidget);
     expect(find.text('丙'), findsNothing);
+  });
+
+  testWidgets('设置页只显示入口，点开后才展开具体选项', (tester) async {
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('设置').last);
+    await tester.pumpAndSettle();
+    expect(find.text('主题模式'), findsNothing);
+    expect(find.text('导出完整备份'), findsNothing);
+    await tester.scrollUntilVisible(find.text('外观与阅读'), 120);
+    await tester.tap(find.text('外观与阅读'));
+    await tester.pumpAndSettle();
+    expect(find.text('主题模式'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('卡片阅读字号'), 300);
+    expect(find.text('卡片阅读字号'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('资料与备份'), 120);
+    await tester.tap(find.text('资料与备份'));
+    await tester.pumpAndSettle();
+    expect(find.text('导出完整备份'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('设置展开完成与收回时保留二级页状态，收回前不重复显示入口', (tester) async {
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('设置').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('外观与阅读'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    final page = find.byWidgetPredicate(
+      (widget) => widget.runtimeType.toString() == '_AppearancePage',
+    );
+    final state = tester.state(page);
+    await tester.pumpAndSettle();
+    expect(tester.state(page), same(state));
+
+    await tester.pageBack();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(tester.state(page), same(state));
+    // 返回动画结束前，只应绘制动画中的那一行。
+    expect(find.text('外观与阅读'), findsNWidgets(2));
+    await tester.pumpAndSettle();
+    expect(find.text('外观与阅读'), findsOneWidget);
+    await tester.tap(find.text('外观与阅读'));
+    await tester.pumpAndSettle();
+    expect(find.text('主题模式'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('玻璃三档和导航样式即时生效，返回后保留选择', (tester) async {
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('设置').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('外观与阅读'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('标准'), 250);
+    await tester.tap(find.text('标准'));
+    await tester.pumpAndSettle();
+    expect(store.preferences.liquidGlass, 'standard');
+    expect(
+      tester.widget<LiquidGlassScope>(find.byType(LiquidGlassScope)).quality,
+      LiquidGlassQuality.standard,
+    );
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<LiquidGlassScope>(find.byType(LiquidGlassScope)).enabled,
+      isFalse,
+    );
+    await tester.tap(find.text('超高'));
+    await tester.pumpAndSettle();
+    expect(store.preferences.liquidGlass, 'ultra');
+    await tester.scrollUntilVisible(find.text('固定'), -250);
+    await tester.tap(find.text('固定'));
+    await tester.pumpAndSettle();
+    expect(store.preferences.floatingNavigation, isFalse);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationBar), findsOneWidget);
+    await tester.tap(find.text('外观与阅读'));
+    await tester.pumpAndSettle();
+    expect(store.preferences.floatingNavigation, isFalse);
+    expect(store.preferences.liquidGlass, 'ultra');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('实时预览的导航栏不遮挡卡片，放大字体和固定导航也能完整排版', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('设置').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('外观与阅读'));
+    await tester.pumpAndSettle();
+    for (final scale in [1.0, 1.6]) {
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      for (final floating in [true, false]) {
+        store.preferences.floatingNavigation = floating;
+        await store.savePreferences();
+        await tester.pumpAndSettle();
+        final card = find
+            .ancestor(
+              of: find.text('知识属于你，记忆也是。'),
+              matching: find.byType(Container),
+            )
+            .first;
+        final bar = floating
+            ? find.byType(NavigationDock).last
+            : find.byType(NavigationBar).last;
+        expect(
+          tester.getRect(card).bottom,
+          lessThanOrEqualTo(tester.getRect(bar).top),
+          reason: '字号 $scale、悬浮 $floating 时卡片不应与导航栏相交',
+        );
+        expect(tester.takeException(), isNull);
+      }
+    }
   });
 }
