@@ -63,6 +63,7 @@ class StudyCard {
     this.lastReview,
     this.firstLearned,
     this.algorithm = 6,
+    this.favorite = false,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
   final String id, deckId, source, chapter, plan;
@@ -71,6 +72,7 @@ class StudyCard {
   final DateTime? dueAt, lastReview, firstLearned, enrolledAt;
   final DateTime createdAt;
   final int algorithm;
+  final bool favorite;
   bool get isNew => state == null;
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -86,6 +88,7 @@ class StudyCard {
     'firstLearned': firstLearned?.toIso8601String(),
     'createdAt': createdAt.toIso8601String(),
     'algorithm': algorithm,
+    'favorite': favorite,
   };
   factory StudyCard.fromJson(Map<String, dynamic> j) => StudyCard(
     id: j['id'],
@@ -101,6 +104,7 @@ class StudyCard {
     firstLearned: _date(j['firstLearned']),
     createdAt: _date(j['createdAt']),
     algorithm: j['algorithm'] ?? 6,
+    favorite: j['favorite'] ?? false,
   );
   StudyCard withValues(Map<String, dynamic> values) =>
       StudyCard.fromJson({...toJson(), ...values});
@@ -142,6 +146,45 @@ class StudySession {
   );
 }
 
+class PracticeSession {
+  PracticeSession({
+    required this.deckId,
+    required this.queue,
+    required this.total,
+    this.completed = 0,
+    this.skipped = 0,
+    this.attempts = 0,
+    this.firstRecalled = 0,
+    this.answered = const [],
+    this.mistakes = const [],
+  });
+  final String deckId;
+  final List<String> queue, answered, mistakes;
+  final int total, completed, skipped, attempts, firstRecalled;
+  Map<String, dynamic> toJson() => {
+    'deckId': deckId,
+    'queue': queue,
+    'total': total,
+    'completed': completed,
+    'skipped': skipped,
+    'attempts': attempts,
+    'firstRecalled': firstRecalled,
+    'answered': answered,
+    'mistakes': mistakes,
+  };
+  factory PracticeSession.fromJson(Map<String, dynamic> j) => PracticeSession(
+    deckId: j['deckId'],
+    queue: List<String>.from(j['queue']),
+    total: j['total'],
+    completed: j['completed'],
+    skipped: j['skipped'],
+    attempts: j['attempts'],
+    firstRecalled: j['firstRecalled'],
+    answered: List<String>.from(j['answered']),
+    mistakes: List<String>.from(j['mistakes']),
+  );
+}
+
 class Preferences {
   Preferences({
     this.theme = 'system',
@@ -156,6 +199,12 @@ class Preferences {
     this.colorStyle = 'tonalSpot',
     this.textScale = 1,
     this.fontFamily = 'system',
+    this.dockOpacity = .58,
+    this.dockBlur = 16,
+    this.relearnGap = 3,
+    this.studyHaptics = true,
+    this.showStudyProgress = true,
+    this.showRecallHint = true,
   });
   String theme;
   int color, defaultLimit;
@@ -164,6 +213,9 @@ class Preferences {
   String liquidGlass, tabAnimation, colorStyle, fontFamily;
   bool floatingNavigation, pureBlack;
   double textScale;
+  double dockOpacity, dockBlur;
+  int relearnGap;
+  bool studyHaptics, showStudyProgress, showRecallHint;
   Map<String, dynamic> toJson() => {
     'theme': theme,
     'color': color,
@@ -177,6 +229,12 @@ class Preferences {
     'colorStyle': colorStyle,
     'textScale': textScale,
     'fontFamily': fontFamily,
+    'dockOpacity': dockOpacity,
+    'dockBlur': dockBlur,
+    'relearnGap': relearnGap,
+    'studyHaptics': studyHaptics,
+    'showStudyProgress': showStudyProgress,
+    'showRecallHint': showRecallHint,
   };
   factory Preferences.fromJson(Map<String, dynamic> j) => Preferences(
     theme: j['theme'] ?? 'system',
@@ -191,6 +249,12 @@ class Preferences {
     colorStyle: j['colorStyle'] ?? 'tonalSpot',
     textScale: (j['textScale'] as num? ?? 1).toDouble(),
     fontFamily: j['fontFamily'] ?? 'system',
+    dockOpacity: (j['dockOpacity'] as num? ?? .58).toDouble(),
+    dockBlur: (j['dockBlur'] as num? ?? 16).toDouble(),
+    relearnGap: j['relearnGap'] ?? 3,
+    studyHaptics: j['studyHaptics'] ?? true,
+    showStudyProgress: j['showStudyProgress'] ?? true,
+    showRecallHint: j['showRecallHint'] ?? true,
   );
 }
 

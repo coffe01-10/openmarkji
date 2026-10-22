@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:material_color_utilities/material_color_utilities.dart'
     show Hct;
 import 'package:flutter/material.dart';
+
 import 'compat.dart';
 
 import 'liquid_glass.dart';
@@ -1149,7 +1150,7 @@ class _FloatingNavigationBarState extends State<FloatingNavigationBar>
         LiquidGlassScope.qualityOf(context) == LiquidGlassQuality.ultra;
     final bar = _DockSurface(
       glass: glass,
-      style: LiquidGlassStyle.pill(colorScheme),
+      style: LiquidGlassScope.dockStyleOf(context),
       shadows: ultra ? dockGlassShadows(colorScheme) : const [],
       glow: _touchGlow,
       child: Material(
@@ -1351,9 +1352,8 @@ class _Lens extends StatelessWidget {
               ? platter.withValues(alpha: platter.a * (1 - lifted))
               : Color.alphaBlend(
                   colorScheme.onSurface.withValues(alpha: 0.08 * lifted),
-                  SurfaceLevel.floatingOf(
-                    colorScheme,
-                  ).next.colorOf(colorScheme),
+                  SurfaceLevel.floatingOf(colorScheme).next
+                      .colorOf(colorScheme),
                 ),
           shape: AppShape.full,
         ),
@@ -1451,9 +1451,8 @@ class _LensContent extends StatelessWidget {
                   width: rect.width,
                   height: rect.height,
                   child: LiquidGlass(
-                    style: LiquidGlassStyle.lensContent(
-                      context.colorScheme,
-                    ).scale(lift),
+                    style: LiquidGlassStyle.lensContent(context.colorScheme)
+                        .scale(lift),
                   ),
                 ),
               ],

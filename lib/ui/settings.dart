@@ -19,9 +19,19 @@ class _SettingsPage extends StatelessWidget {
         page: _StudyPrefsPage(store: store),
       ),
       (
+        icon: Icons.touch_app_outlined,
+        title: '卡片与交互',
+        page: _StudyPrefsPage(store: store, interaction: true),
+      ),
+      (
         icon: Icons.cloud_outlined,
         title: '资料与备份',
         page: _BackupPage(store: store),
+      ),
+      (
+        icon: Icons.help_outline_rounded,
+        title: '帮助与反馈',
+        page: const _HelpPage(),
       ),
       (icon: Icons.info_outline, title: '关于', page: const _AboutPage()),
     ];
@@ -45,8 +55,8 @@ class _SettingsPage extends StatelessWidget {
                 ),
               ),
               for (final group in [
-                (title: '偏好设置', items: entries.take(3).toList()),
-                (title: '更多', items: entries.skip(3).toList()),
+                (title: '偏好设置', items: entries.take(4).toList()),
+                (title: '更多', items: entries.skip(4).toList()),
               ]) ...[
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 28, 16, 12),
@@ -426,7 +436,7 @@ class _SettingsDetail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final background = _settingsCard(Theme.of(context).colorScheme);
+    final background = _settingsCanvas(Theme.of(context).colorScheme);
     return Scaffold(
       backgroundColor: background,
       appBar: AppBar(
@@ -439,7 +449,7 @@ class _SettingsDetail extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 40),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
             children: [child],
           ),
         ),
@@ -449,8 +459,9 @@ class _SettingsDetail extends StatelessWidget {
 }
 
 class _StudyPrefsPage extends StatefulWidget {
-  const _StudyPrefsPage({required this.store});
+  const _StudyPrefsPage({required this.store, this.interaction = false});
   final AppStore store;
+  final bool interaction;
   @override
   State<_StudyPrefsPage> createState() => _StudyPrefsPageState();
 }
@@ -476,42 +487,85 @@ class _StudyPrefsPageState extends State<_StudyPrefsPage> {
   Widget build(BuildContext context) {
     final p = widget.store.preferences;
     return _SettingsDetail(
-      title: '学习偏好',
-      child: _Panel(
-        padding: const EdgeInsets.all(8),
+      title: widget.interaction ? '卡片与交互' : '学习偏好',
+      child: _AppearanceCard(
         child: Column(
           children: [
-            ListTile(
-              leading: const Icon(Icons.auto_stories_outlined),
-              title: const Text('新牌组每日新学上限'),
-              subtitle: const Text(
-                '已创建牌组请在各自设置中修改',
-                style: TextStyle(fontSize: 12),
+            if (widget.interaction) ...[
+              SwitchListTile(
+                title: const Text('学习触感反馈'),
+                subtitle: const Text('揭晓答案时轻触振动'),
+                value: p.studyHaptics,
+                onChanged: (v) => _action(context, () async {
+                  p.studyHaptics = v;
+                  await widget.store.savePreferences();
+                }),
               ),
-              trailing: Text('${p.defaultLimit} 张'),
-              onTap: () => _action(context, () async {
-                final value = await _textPrompt(
-                  context,
-                  '默认每日新学上限',
-                  initial: '${p.defaultLimit}',
-                );
-                if (value == null) return;
-                final n = int.tryParse(value);
-                if (n == null || n < 0) {
-                  throw const FormatException('请输入非负整数');
-                }
-                p.defaultLimit = n;
-                await widget.store.savePreferences();
-              }),
-            ),
-            const ListTile(
-              leading: Icon(Icons.psychology_outlined),
-              title: Text('先复习，再学习'),
-              subtitle: Text(
-                '首次评分决定长期排期；当日重学单独记录。',
-                style: TextStyle(fontSize: 12, height: 1.6),
+              SwitchListTile(
+                title: const Text('显示学习进度'),
+                subtitle: const Text('显示已完成数量、剩余数量和进度条'),
+                value: p.showStudyProgress,
+                onChanged: (v) => _action(context, () async {
+                  p.showStudyProgress = v;
+                  await widget.store.savePreferences();
+                }),
               ),
-            ),
+              SwitchListTile(
+                title: const Text('显示回忆提示'),
+                subtitle: const Text('揭晓前提示先在心里回忆答案'),
+                value: p.showRecallHint,
+                onChanged: (v) => _action(context, () async {
+                  p.showRecallHint = v;
+                  await widget.store.savePreferences();
+                }),
+              ),
+            ] else ...[
+              ListTile(
+                leading: const Icon(Icons.auto_stories_outlined),
+                title: const Text('新牌组每日新学上限'),
+                subtitle: const Text(
+                  '已创建牌组请在各自设置中修改',
+                  style: TextStyle(fontSize: 12),
+                ),
+                trailing: Text('${p.defaultLimit} 张'),
+                onTap: () => _action(context, () async {
+                  final value = await _textPrompt(
+                    context,
+                    '默认每日新学上限',
+                    initial: '${p.defaultLimit}',
+                  );
+                  if (value == null) return;
+                  final n = int.tryParse(value);
+                  if (n == null || n < 0) {
+                    throw const FormatException('请输入非负整数');
+                  }
+                  p.defaultLimit = n;
+                  await widget.store.savePreferences();
+                }),
+              ),
+              _AppearanceMenu(
+                title: '当日重学间隔',
+                value: '${p.relearnGap}',
+                options: const {
+                  '1': '间隔 1 张',
+                  '3': '间隔 3 张',
+                  '5': '间隔 5 张',
+                  '10': '间隔 10 张',
+                },
+                onChanged: (v) => _action(context, () async {
+                  p.relearnGap = int.parse(v);
+                  await widget.store.savePreferences();
+                }),
+              ),
+              const ListTile(
+                leading: Icon(Icons.psychology_outlined),
+                title: Text('先复习，再学习'),
+                subtitle: Text(
+                  '首次评分决定长期排期；当日重学单独记录。',
+                  style: TextStyle(fontSize: 12, height: 1.6),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -540,8 +594,7 @@ class _BackupPageState extends State<_BackupPage> {
   Widget build(BuildContext context) {
     return _SettingsDetail(
       title: '资料与备份',
-      child: _Panel(
-        padding: const EdgeInsets.all(8),
+      child: _AppearanceCard(
         child: Column(
           children: [
             ListTile(
@@ -616,47 +669,6 @@ class _BackupPageState extends State<_BackupPage> {
                 padding: EdgeInsets.all(16),
                 child: LinearProgressIndicator(),
               ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AboutPage extends StatelessWidget {
-  const _AboutPage();
-
-  @override
-  Widget build(BuildContext context) {
-    final c = Theme.of(context).colorScheme;
-    return _SettingsDetail(
-      title: '关于',
-      child: _Panel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'OpenMarkji · 1.0',
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '离线使用，无需账号。\nMMX-5 / MMX-6 沿用项目已有实现及默认参数。\n墨墨文本支持文字、公式、图片和挖空；外部媒体 ID 需要对应资源。',
-              style: TextStyle(
-                color: c.onSurfaceVariant,
-                height: 1.8,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => showLicensePage(
-                context: context,
-                applicationName: 'OpenMarkji',
-                applicationVersion: '1.0.0',
-              ),
-              child: const Text('开源许可'),
-            ),
           ],
         ),
       ),

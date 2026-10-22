@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/material.dart';
+
 import 'compat.dart';
 
 part 'liquid_glass_capture.dart';
@@ -55,11 +56,23 @@ class LiquidGlassScope extends InheritedWidget {
     super.key,
     required this.enabled,
     this.quality = LiquidGlassQuality.ultra,
+    this.dockOpacity = .58,
+    this.dockBlur = 16,
     required super.child,
   });
 
   final bool enabled;
   final LiquidGlassQuality quality;
+  final double dockOpacity, dockBlur;
+
+  static LiquidGlassStyle dockStyleOf(BuildContext context) {
+    final scope = _of(context);
+    return LiquidGlassStyle.pill(Theme.of(context).colorScheme).copyWith(
+      tintOpacity: scope?.dockOpacity ?? .58,
+      blur: scope?.dockBlur ?? 16,
+      hazeBlur: scope?.dockBlur ?? 16,
+    );
+  }
 
   static bool of(BuildContext context) => _of(context)?.enabled ?? false;
 
@@ -71,7 +84,10 @@ class LiquidGlassScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(LiquidGlassScope oldWidget) =>
-      enabled != oldWidget.enabled || quality != oldWidget.quality;
+      enabled != oldWidget.enabled ||
+      quality != oldWidget.quality ||
+      dockOpacity != oldWidget.dockOpacity ||
+      dockBlur != oldWidget.dockBlur;
 }
 
 /// Lengths are dp. The shader shrinks [bevel] and [refraction] to fit a pane
@@ -285,12 +301,16 @@ class LiquidGlassStyle {
     );
   }
 
-  LiquidGlassStyle copyWith({double? blur}) => LiquidGlassStyle(
-    tint: tint,
+  LiquidGlassStyle copyWith({
+    double? blur,
+    double? hazeBlur,
+    double? tintOpacity,
+  }) => LiquidGlassStyle(
+    tint: tintOpacity == null ? tint : tint.withValues(alpha: tintOpacity),
     contrast: contrast,
     blur: blur ?? this.blur,
     haze: haze,
-    hazeBlur: hazeBlur,
+    hazeBlur: hazeBlur ?? this.hazeBlur,
     refraction: refraction,
     bevel: bevel,
     saturation: saturation,

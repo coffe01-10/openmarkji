@@ -1,5 +1,11 @@
 part of 'app.dart';
 
+const _recallChoices = [
+  RecallGrade.know,
+  RecallGrade.vague,
+  RecallGrade.forgot,
+];
+
 class _StudyPage extends StatefulWidget {
   const _StudyPage({required this.store});
   final AppStore store;
@@ -99,6 +105,7 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
         appBar: AppBar(
           title: Text(finished ? '今日完成' : title),
           actions: [
+            if (card != null) _FavoriteButton(store: widget.store, card: card),
             IconButton(
               tooltip: '撤销上一次评分',
               onPressed: _busy || !_undoAvailable
@@ -155,49 +162,50 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
                     )
                   : Column(
                       children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
-                          child: Column(
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      '${_deck?.name ?? ''}${card.chapter.isEmpty ? '' : ' / ${card.chapter}'}',
-                                      overflow: TextOverflow.ellipsis,
+                        if (widget.store.preferences.showStudyProgress)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
+                            child: Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        '${_deck?.name ?? ''}${card.chapter.isEmpty ? '' : ' / ${card.chapter}'}',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: c.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      '已完成 ${session.completed} · 剩余 ${session.queue.length}',
                                       style: TextStyle(
-                                        fontSize: 12,
+                                        fontSize: 11,
                                         color: c.onSurfaceVariant,
                                       ),
                                     ),
-                                  ),
-                                  Text(
-                                    '已完成 ${session.completed} · 剩余 ${session.queue.length}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: c.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 14),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: LinearProgressIndicator(
-                                  value:
-                                      session.completed /
-                                      math.max(
-                                        1,
-                                        session.completed +
-                                            session.queue.length,
-                                      ),
-                                  minHeight: 5,
-                                  backgroundColor: c.surfaceContainerHigh,
+                                  ],
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 14),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: LinearProgressIndicator(
+                                    value:
+                                        session.completed /
+                                        math.max(
+                                          1,
+                                          session.completed +
+                                              session.queue.length,
+                                        ),
+                                    minHeight: 5,
+                                    backgroundColor: c.surfaceContainerHigh,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
                         Expanded(
                           child: SingleChildScrollView(
                             padding: const EdgeInsets.symmetric(
@@ -233,9 +241,56 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
                                               : Icons.style_outlined,
                                         ),
                                         const Spacer(),
-                                        Icon(
-                                          Icons.more_horiz,
-                                          color: c.outline,
+                                        CommonPopupBox(
+                                          targetBuilder: (open) =>
+                                              ElasticButton(
+                                                child: IconButton(
+                                                  tooltip: '当前卡片操作',
+                                                  onPressed: _busy
+                                                      ? null
+                                                      : open,
+                                                  icon: const Icon(
+                                                    Icons.more_horiz,
+                                                  ),
+                                                ),
+                                              ),
+                                          popupBuilder: (_) => CommonPopupMenu(
+                                            items: [
+                                              CommonPopupMenuItem(
+                                                label: '暂停这张卡',
+                                                glyph:
+                                                    Icons.pause_circle_outline,
+                                                onPressed: () => _action(
+                                                  context,
+                                                  () async {
+                                                    setState(
+                                                      () => _busy = true,
+                                                    );
+                                                    try {
+                                                      await widget.store
+                                                          .bulkUpdate(
+                                                            [card.id],
+                                                            {'plan': 'paused'},
+                                                          );
+                                                      await _load();
+                                                      if (context.mounted) {
+                                                        _toast(
+                                                          context,
+                                                          '已暂停，可在牌组的“暂停”筛选中重新加入计划',
+                                                        );
+                                                      }
+                                                    } finally {
+                                                      if (mounted) {
+                                                        setState(
+                                                          () => _busy = false,
+                                                        );
+                                                      }
+                                                    }
+                                                  },
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -247,7 +302,8 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
                                       interactive: true,
                                     ),
                                     const SizedBox(height: 24),
-                                    if (!_revealed)
+                                    if (!_revealed &&
+                                        widget.store.preferences.showRecallHint)
                                       Text(
                                         '先在心里回忆一下答案',
                                         style: TextStyle(
@@ -273,7 +329,12 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
                                       onPressed: _busy
                                           ? null
                                           : () {
-                                              HapticFeedback.lightImpact();
+                                              if (widget
+                                                  .store
+                                                  .preferences
+                                                  .studyHaptics) {
+                                                HapticFeedback.lightImpact();
+                                              }
                                               setState(() => _revealed = true);
                                             },
                                       icon: const Icon(
@@ -297,110 +358,78 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
                                       const SizedBox(height: 12),
                                       LayoutBuilder(
                                         builder: (context, constraints) {
-                                          final buttons =
-                                              [
-                                                RecallGrade.forgot,
-                                                RecallGrade.vague,
-                                                RecallGrade.know,
-                                                RecallGrade.familiar,
-                                              ].map((g) {
-                                                final colors = switch (g) {
-                                                  RecallGrade.forgot => (
-                                                    c.errorContainer,
-                                                    c.onErrorContainer,
+                                          final buttons = _recallChoices.map((
+                                            g,
+                                          ) {
+                                            final colors = switch (g) {
+                                              RecallGrade.forgot => (
+                                                c.errorContainer,
+                                                c.onErrorContainer,
+                                              ),
+                                              RecallGrade.vague => (
+                                                c.tertiaryContainer,
+                                                c.onTertiaryContainer,
+                                              ),
+                                              RecallGrade.know => (
+                                                c.primaryContainer,
+                                                c.onPrimaryContainer,
+                                              ),
+                                              RecallGrade.familiar => (
+                                                c.secondaryContainer,
+                                                c.onSecondaryContainer,
+                                              ),
+                                            };
+                                            return FilledButton(
+                                              style: FilledButton.styleFrom(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 14,
+                                                    ),
+                                                backgroundColor: colors.$1,
+                                                foregroundColor: colors.$2,
+                                              ),
+                                              onPressed: _busy
+                                                  ? null
+                                                  : () => _grade(g),
+                                              child: Column(
+                                                children: [
+                                                  Text(
+                                                    g.label,
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
                                                   ),
-                                                  RecallGrade.vague => (
-                                                    c.tertiaryContainer,
-                                                    c.onTertiaryContainer,
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    g == RecallGrade.forgot ||
+                                                            g ==
+                                                                RecallGrade
+                                                                    .vague
+                                                        ? '稍后再来'
+                                                        : '完成这张',
+                                                    style: const TextStyle(
+                                                      fontSize: 10,
+                                                    ),
                                                   ),
-                                                  RecallGrade.know => (
-                                                    c.primaryContainer,
-                                                    c.onPrimaryContainer,
-                                                  ),
-                                                  RecallGrade.familiar => (
-                                                    c.secondaryContainer,
-                                                    c.onSecondaryContainer,
-                                                  ),
-                                                };
-                                                return FilledButton(
-                                                  style: FilledButton.styleFrom(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 8,
-                                                          vertical: 14,
-                                                        ),
-                                                    backgroundColor: colors.$1,
-                                                    foregroundColor: colors.$2,
-                                                  ),
-                                                  onPressed: _busy
-                                                      ? null
-                                                      : () => _grade(g),
-                                                  child: Column(
-                                                    children: [
-                                                      Text(
-                                                        g.label,
-                                                        style: const TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                        ),
-                                                      ),
-                                                      const SizedBox(height: 4),
-                                                      Text(
-                                                        g ==
-                                                                    RecallGrade
-                                                                        .forgot ||
-                                                                g ==
-                                                                    RecallGrade
-                                                                        .vague
-                                                            ? '稍后再来'
-                                                            : '完成这张',
-                                                        style: const TextStyle(
-                                                          fontSize: 10,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                );
-                                              }).toList();
-                                          final twoRows =
-                                              MediaQuery.textScalerOf(context)
-                                                      .scale(16) >
-                                                  24 ||
-                                              constraints.maxWidth < 300;
-                                          return twoRows
-                                              ? Wrap(
-                                                  spacing: 8,
-                                                  runSpacing: 8,
-                                                  children: buttons
-                                                      .map(
-                                                        (b) => SizedBox(
-                                                          width:
-                                                              (constraints
-                                                                      .maxWidth -
-                                                                  8) /
-                                                              2,
-                                                          child: b,
-                                                        ),
-                                                      )
-                                                      .toList(),
-                                                )
-                                              : Row(
-                                                  children: [
-                                                    for (
-                                                      var i = 0;
-                                                      i < buttons.length;
-                                                      i++
-                                                    ) ...[
-                                                      if (i > 0)
-                                                        const SizedBox(
-                                                          width: 8,
-                                                        ),
-                                                      Expanded(
-                                                        child: buttons[i],
-                                                      ),
-                                                    ],
-                                                  ],
-                                                );
+                                                ],
+                                              ),
+                                            );
+                                          }).toList();
+                                          return Row(
+                                            children: [
+                                              for (
+                                                var i = 0;
+                                                i < buttons.length;
+                                                i++
+                                              ) ...[
+                                                if (i > 0)
+                                                  const SizedBox(width: 8),
+                                                Expanded(child: buttons[i]),
+                                              ],
+                                            ],
+                                          );
                                         },
                                       ),
                                     ],
@@ -516,6 +545,7 @@ class _CardPage extends StatelessWidget {
           appBar: AppBar(
             title: const Text('卡片详情'),
             actions: [
+              _FavoriteButton(store: store, card: card),
               IconButton(
                 tooltip: '编辑卡片',
                 onPressed: () => _push(

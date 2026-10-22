@@ -320,7 +320,7 @@ class _DeckPage extends StatefulWidget {
 
 class _DeckPageState extends State<_DeckPage> {
   String _search = '';
-  String? _chapter, _plan, _tag;
+  String? _chapter, _plan, _tag, _focus;
   final _selected = <String>{};
   final _scroll = ScrollController();
   List<StudyCard> _cards = [];
@@ -364,6 +364,7 @@ class _DeckPageState extends State<_DeckPage> {
         chapter: _chapter,
         plan: _plan,
         tag: _tag,
+        focus: _focus,
         offset: _cards.length,
       );
       final deck = await widget.store.deck(widget.deckId);
@@ -460,11 +461,21 @@ class _DeckPageState extends State<_DeckPage> {
         actions: [
           if (d != null)
             IconButton(
+              tooltip: '专项练习',
+              icon: const Icon(Icons.school_outlined),
+              onPressed: () => _push(
+                context,
+                _PracticeSetupPage(store: widget.store, deck: d, focus: _focus),
+              ),
+            ),
+          if (d != null)
+            IconButton(
               tooltip: '牌组设置',
               icon: const Icon(Icons.tune_rounded),
               onPressed: () => _editDeck(context, widget.store, deck: d),
             ),
-          PopupMenuButton<String>(
+          _ActionMenu<String>(
+            destructive: const {'delete'},
             onSelected: (v) => _action(context, () async {
               if (v == 'chapter') {
                 final name = await _textPrompt(context, '新建章节');
@@ -504,12 +515,12 @@ class _DeckPageState extends State<_DeckPage> {
                 if (context.mounted && !widget.embedded) Navigator.pop(context);
               }
             }),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'chapter', child: Text('新建章节')),
-              PopupMenuItem(value: 'export', child: Text('导出语法 TXT')),
-              PopupMenuItem(value: 'plain', child: Text('导出纯文本')),
-              PopupMenuItem(value: 'delete', child: Text('删除牌组')),
-            ],
+            options: const {
+              'chapter': '新建章节',
+              'export': '导出语法 TXT',
+              'plain': '导出纯文本',
+              'delete': '删除牌组',
+            },
           ),
         ],
       ),
@@ -576,6 +587,26 @@ class _DeckPageState extends State<_DeckPage> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
+                      for (final entry in const {
+                        'favorite': '收藏',
+                        'difficult': '难卡',
+                      }.entries)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: FilterChip(
+                            avatar: Icon(
+                              entry.key == 'favorite'
+                                  ? Icons.star_outline_rounded
+                                  : Icons.psychology_outlined,
+                              size: 18,
+                            ),
+                            label: Text(entry.value),
+                            selected: _focus == entry.key,
+                            onSelected: (selected) => _filter(
+                              () => _focus = selected ? entry.key : null,
+                            ),
+                          ),
+                        ),
                       for (final entry in <String?, String>{
                         null: '全部',
                         'library': '未加入',
@@ -590,20 +621,16 @@ class _DeckPageState extends State<_DeckPage> {
                             onSelected: (_) => _filter(() => _plan = entry.key),
                           ),
                         ),
-                      PopupMenuButton<String>(
+                      _ActionMenu<String>(
                         tooltip: '按章节筛选',
+                        selected: _chapter ?? '__all',
                         onSelected: (s) =>
                             _filter(() => _chapter = s == '__all' ? null : s),
-                        itemBuilder: (_) => [
-                          const PopupMenuItem(
-                            value: '__all',
-                            child: Text('所有章节'),
-                          ),
-                          const PopupMenuItem(value: '', child: Text('未分类')),
-                          ...?d?.chapters.map(
-                            (s) => PopupMenuItem(value: s, child: Text(s)),
-                          ),
-                        ],
+                        options: {
+                          '__all': '所有章节',
+                          '': '未分类',
+                          for (final s in d?.chapters ?? <String>[]) s: s,
+                        },
                         child: Padding(
                           padding: const EdgeInsets.all(10),
                           child: Text(
@@ -616,19 +643,15 @@ class _DeckPageState extends State<_DeckPage> {
                         ),
                       ),
                       if (_tags.isNotEmpty)
-                        PopupMenuButton<String>(
+                        _ActionMenu<String>(
                           tooltip: '按标签筛选',
+                          selected: _tag ?? '__all',
                           onSelected: (s) =>
                               _filter(() => _tag = s == '__all' ? null : s),
-                          itemBuilder: (_) => [
-                            const PopupMenuItem(
-                              value: '__all',
-                              child: Text('所有标签'),
-                            ),
-                            ..._tags.map(
-                              (s) => PopupMenuItem(value: s, child: Text(s)),
-                            ),
-                          ],
+                          options: {
+                            '__all': '所有标签',
+                            for (final s in _tags) s: s,
+                          },
                           child: Padding(
                             padding: const EdgeInsets.all(10),
                             child: Text('${_tag ?? '标签'} ▾'),
@@ -655,15 +678,16 @@ class _DeckPageState extends State<_DeckPage> {
                     onPressed: () => _batch('active'),
                     child: const Text('加入计划'),
                   ),
-                  PopupMenuButton<String>(
+                  _ActionMenu<String>(
+                    destructive: const {'delete'},
                     onSelected: _batch,
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'paused', child: Text('暂停学习')),
-                      PopupMenuItem(value: 'library', child: Text('移出计划')),
-                      PopupMenuItem(value: 'move', child: Text('移动到牌组')),
-                      PopupMenuItem(value: 'chapter', child: Text('移动到章节')),
-                      PopupMenuItem(value: 'delete', child: Text('删除所选')),
-                    ],
+                    options: const {
+                      'paused': '暂停学习',
+                      'library': '移出计划',
+                      'move': '移动到牌组',
+                      'chapter': '移动到章节',
+                      'delete': '删除所选',
+                    },
                   ),
                 ],
               ),
@@ -674,8 +698,12 @@ class _DeckPageState extends State<_DeckPage> {
                     padding: const EdgeInsets.all(20),
                     child: _Empty(
                       icon: Icons.note_add_outlined,
-                      title: '这里还没有卡片',
-                      detail: '新建或导入卡片后，勾选卡片即可加入学习计划。',
+                      title: _focus == null ? '这里还没有卡片' : '当前筛选没有卡片',
+                      detail: _focus == 'favorite'
+                          ? '点亮卡片右侧的星标，把重点收进收藏。'
+                          : _focus == 'difficult'
+                          ? '最近一次正式评分为“忘记”或“模糊”的卡片会出现在这里。'
+                          : '新建或导入卡片后，勾选卡片即可加入学习计划。',
                     ),
                   )
                 : ListView.builder(
@@ -698,6 +726,7 @@ class _DeckPageState extends State<_DeckPage> {
                       }
                       final card = _cards[i];
                       return Card(
+                        key: ValueKey(card.id),
                         margin: const EdgeInsets.symmetric(vertical: 5),
                         color: _selected.contains(card.id)
                             ? c.secondaryContainer
@@ -714,6 +743,10 @@ class _DeckPageState extends State<_DeckPage> {
                                   ? _selected.add(card.id)
                                   : _selected.remove(card.id);
                             }),
+                          ),
+                          trailing: _FavoriteButton(
+                            store: widget.store,
+                            card: card,
                           ),
                           title: Text(
                             _short(card.source, 100),
@@ -759,6 +792,7 @@ class _DeckPageState extends State<_DeckPage> {
                         chapter: _chapter,
                         plan: _plan,
                         tag: _tag,
+                        focus: _focus,
                         limit: 1000000,
                       );
                       if (mounted) {

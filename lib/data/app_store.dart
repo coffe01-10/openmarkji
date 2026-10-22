@@ -178,6 +178,8 @@ class AppStore extends ChangeNotifier {
     String? chapter,
     String? plan,
     String? tag,
+    String? focus,
+    bool randomOrder = false,
     int offset = 0,
     int limit = 60,
   }) async {
@@ -199,12 +201,102 @@ class AppStore extends ChangeNotifier {
       sql += ' AND EXISTS (SELECT 1 FROM json_each(cards.tags) WHERE value=?)';
       args.add(tag);
     }
-    sql += ' ORDER BY rowid LIMIT ? OFFSET ?';
+    if (focus == 'favorite') {
+      sql += " AND json_extract(payload,'\$.favorite')=1";
+    } else if (focus == 'difficult') {
+      // The most recent formal answer defines a difficult card; practice never
+      // replaces that evidence or changes its next scheduled review.
+      sql += " AND (SELECT grade FROM reviews WHERE card_id=cards.id AND kind='formal' ORDER BY reviewed_at DESC,rowid DESC LIMIT 1) IN (2,3)";
+    }
+    sql += ' ORDER BY ${randomOrder ? 'random()' : 'rowid'} LIMIT ? OFFSET ?';
     args.addAll([limit, offset]);
     return (await db.rows(
       sql,
       args,
     )).map((r) => StudyCard.fromJson(decodeObject(r['payload']))).toList();
+  }
+
+  Future<void> setFavorite(String id, bool favorite) async {
+    await db.transaction(() async {
+      final current = await card(id);
+      if (current == null) return;
+      await db.customStatement('UPDATE cards SET payload=? WHERE id=?', [
+        jsonEncode(current.withValues({'favorite': favorite}).toJson()),
+        id,
+      ]);
+    });
+    changed();
+  }
+
+  Future<PracticeSession?> practiceSession() async {
+    final raw = await setting('practiceSession');
+    return raw == null ? null : PracticeSession.fromJson(decodeObject(raw));
+  }
+
+  Future<PracticeSession> startPractice(
+    String deckId, {
+    String? focus,
+    int limit = 20,
+    bool shuffle = true,
+  }) async {
+    final pool = await cards(
+      deckId: deckId,
+      focus: focus,
+      limit: limit,
+      randomOrder: shuffle,
+    );
+    final ids = pool.take(limit).map((c) => c.id).toList();
+    if (ids.isEmpty) throw const FormatException('当前范围没有可练习的卡片');
+    final session = PracticeSession(
+      deckId: deckId,
+      queue: ids,
+      total: ids.length,
+    );
+    await setSetting('practiceSession', jsonEncode(session.toJson()));
+    changed();
+    return session;
+  }
+
+  Future<PracticeSession?> preparePractice() => db.transaction(() async {
+    final session = await practiceSession();
+    if (session == null) return null;
+    final queue = <String>[];
+    for (final id in session.queue) {
+      if (await card(id) != null) queue.add(id);
+    }
+    final next = PracticeSession.fromJson({
+      ...session.toJson(),
+      'queue': queue,
+      'skipped': session.skipped + session.queue.length - queue.length,
+    });
+    await setSetting('practiceSession', jsonEncode(next.toJson()));
+    return next;
+  });
+
+  Future<void> gradePractice(RecallGrade grade) async {
+    await db.transaction(() async {
+      final session = await practiceSession();
+      if (session == null || session.queue.isEmpty) return;
+      final id = session.queue.first;
+      final recalled =
+          grade == RecallGrade.know || grade == RecallGrade.familiar;
+      final first = !session.answered.contains(id);
+      final queue = [...session.queue]..removeAt(0);
+      if (!recalled) {
+        queue.insert(math.min(preferences.relearnGap, queue.length), id);
+      }
+      final next = PracticeSession.fromJson({
+        ...session.toJson(),
+        'queue': queue,
+        'completed': session.completed + (recalled ? 1 : 0),
+        'attempts': session.attempts + 1,
+        'firstRecalled': session.firstRecalled + (first && recalled ? 1 : 0),
+        'answered': {...session.answered, id}.toList(),
+        'mistakes': {...session.mistakes, if (!recalled) id}.toList(),
+      });
+      await setSetting('practiceSession', jsonEncode(next.toJson()));
+    });
+    changed();
   }
 
   Future<List<String>> tags(String deckId) async => (await db.rows(
@@ -479,7 +571,10 @@ class AppStore extends ChangeNotifier {
         final needsPractice =
             grade == RecallGrade.forgot || grade == RecallGrade.vague;
         if (needsPractice) {
-          queue.insert(math.min(3, queue.length), QueueEntry(c.id, 'relearn'));
+          queue.insert(
+            math.min(preferences.relearnGap, queue.length),
+            QueueEntry(c.id, 'relearn'),
+          );
         }
         final next = StudySession(
           day: current.day,
@@ -508,8 +603,12 @@ class AppStore extends ChangeNotifier {
     if (raw == null) return false;
     final snapshot = decodeObject(raw);
     await db.transaction(() async {
+      final current = await card(snapshot['card']['id']);
       await putCard(
-        StudyCard.fromJson(Map<String, dynamic>.from(snapshot['card'])),
+        StudyCard.fromJson({
+          ...Map<String, dynamic>.from(snapshot['card']),
+          if (current != null) 'favorite': current.favorite,
+        }),
         announce: false,
       );
       await db.customStatement('DELETE FROM reviews WHERE id=?', [

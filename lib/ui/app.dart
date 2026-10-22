@@ -6,15 +6,19 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, kIsWeb;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../algorithms/mmx.dart';
 import '../content/markji.dart';
 import '../data/app_store.dart';
+import '../data/app_updates.dart';
 import '../data/file_export.dart' as file_export;
 import '../domain/entities.dart';
 import 'content_view.dart';
 import 'flclash/liquid_glass.dart';
 import 'flclash/navigation_dock.dart';
+import 'flclash/popup.dart';
 part 'design.dart';
 part 'home.dart';
 part 'library.dart';
@@ -22,6 +26,8 @@ part 'editor.dart';
 part 'study.dart';
 part 'settings.dart';
 part 'appearance.dart';
+part 'support.dart';
+part 'practice.dart';
 
 class OpenMarkjiApp extends StatelessWidget {
   const OpenMarkjiApp({super.key, required this.store});
@@ -133,6 +139,8 @@ class OpenMarkjiApp extends StatelessWidget {
               ),
             ),
             child: LiquidGlassScope(
+              dockOpacity: p.dockOpacity,
+              dockBlur: p.dockBlur,
               enabled: p.liquidGlass != 'none',
               quality: p.liquidGlass == 'standard'
                   ? LiquidGlassQuality.standard
@@ -180,7 +188,7 @@ class _ShellState extends State<_Shell> {
     final pages = [
       _TodayPage(
         store: widget.store,
-        onLibrary: () => setState(() => _index = 1),
+        onLibrary: () => _select(1),
       ),
       _LibraryPage(store: widget.store),
       _StatsPage(store: widget.store),

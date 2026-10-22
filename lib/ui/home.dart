@@ -157,6 +157,23 @@ class _TodayPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
+              _Load(
+                future: store.practiceSession(),
+                builder: (session) => session == null || session.queue.isEmpty
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: _AppearanceCard(
+                          child: _supportTile(
+                            Icons.school_outlined,
+                            '继续专项练习',
+                            () => _push(context, _PracticePage(store: store)),
+                            subtitle:
+                                '已掌握 ${session.completed} / ${session.total} 张 · 独立于每日计划',
+                          ),
+                        ),
+                      ),
+              ),
               Row(
                 children: [
                   Expanded(

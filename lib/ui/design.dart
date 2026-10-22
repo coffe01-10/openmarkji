@@ -1,5 +1,48 @@
 part of 'app.dart';
 
+class _ActionMenu<T> extends StatelessWidget {
+  const _ActionMenu({
+    required this.options,
+    required this.onSelected,
+    this.selected,
+    this.child,
+    this.tooltip = '更多操作',
+    this.destructive = const {},
+  });
+  final Map<T, String> options;
+  final ValueChanged<T> onSelected;
+  final T? selected;
+  final Widget? child;
+  final String tooltip;
+  final Set<T> destructive;
+  @override
+  Widget build(BuildContext context) => CommonPopupBox(
+    popupBuilder: (_) => CommonPopupMenu(
+      items: [
+        for (final entry in options.entries)
+          CommonPopupMenuItem(
+            label: entry.value,
+            checked: selected == null ? null : selected == entry.key,
+            danger: destructive.contains(entry.key),
+            onPressed: () => onSelected(entry.key),
+          ),
+      ],
+    ),
+    targetBuilder: (open) => ElasticButton(
+      child: child == null
+          ? IconButton(
+              tooltip: tooltip,
+              onPressed: open,
+              icon: const Icon(Icons.more_vert_rounded),
+            )
+          : Tooltip(
+              message: tooltip,
+              child: TextButton(onPressed: open, child: child!),
+            ),
+    ),
+  );
+}
+
 class _BrandMark extends StatelessWidget {
   const _BrandMark({this.size = 36});
   final double size;

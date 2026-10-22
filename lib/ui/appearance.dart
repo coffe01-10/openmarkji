@@ -209,6 +209,55 @@ class _AppearancePageState extends State<_AppearancePage> {
                 ],
                 onChanged: (value) => _save((p) => p.liquidGlass = value),
               ),
+              _AppearanceHeader('Dock 玻璃质感', Icons.opacity_rounded),
+              _AppearanceCard(
+                child: Column(
+                  children: [
+                    _DockMaterialPreview(preferences: p),
+                    _PreferenceSlider(
+                      title: '透明度',
+                      value: 1 - p.dockOpacity,
+                      max: 1,
+                      divisions: 20,
+                      label: '${((1 - p.dockOpacity) * 100).round()}%',
+                      enabled: p.liquidGlass != 'none' && p.floatingNavigation,
+                      onChanged: (v) => setState(() => p.dockOpacity = 1 - v),
+                      onChangeEnd: (_) =>
+                          _action(context, widget.store.savePreferences),
+                    ),
+                    _PreferenceSlider(
+                      title: '背景模糊',
+                      value: p.dockBlur,
+                      max: 30,
+                      divisions: 30,
+                      label: '${p.dockBlur.round()}',
+                      enabled: p.liquidGlass != 'none' && p.floatingNavigation,
+                      onChanged: (v) => setState(() => p.dockBlur = v),
+                      onChangeEnd: (_) =>
+                          _action(context, widget.store.savePreferences),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Text(
+                        p.liquidGlass == 'none' || !p.floatingNavigation
+                            ? '启用悬浮导航与液态玻璃后可调节'
+                            : '透明度越高，背景越通透；模糊越高，背景细节越柔和。',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: c.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => _save((p) {
+                        p.dockOpacity = .58;
+                        p.dockBlur = 16;
+                      }),
+                      child: const Text('恢复默认质感'),
+                    ),
+                  ],
+                ),
+              ),
               _AppearanceHeader('文字', Icons.text_fields_rounded),
               _AppearanceCard(
                 child: Column(
@@ -716,32 +765,111 @@ class _AppearanceMenu extends StatelessWidget {
   final Map<String, String> options;
   final ValueChanged<String> onChanged;
   @override
-  Widget build(BuildContext context) => PopupMenuButton<String>(
-    initialValue: value,
-    onSelected: onChanged,
-    itemBuilder: (_) => [
-      for (final entry in options.entries)
-        CheckedPopupMenuItem(
-          value: entry.key,
-          checked: value == entry.key,
-          child: Text(entry.value),
-        ),
-    ],
-    child: ListTile(
-      title: Text(title),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            options[value]!,
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+  Widget build(BuildContext context) => ListTile(
+    title: Text(title),
+    trailing: CommonPopupBox(
+      popupBuilder: (_) => CommonPopupMenu(
+        items: [
+          for (final entry in options.entries)
+            CommonPopupMenuItem(
+              label: entry.value,
+              checked: value == entry.key,
+              onPressed: () => onChanged(entry.key),
             ),
-          ),
-          const SizedBox(width: 6),
-          const Icon(Icons.unfold_more_rounded, size: 18),
         ],
       ),
+      targetBuilder: (open) => ElasticButton(
+        child: TextButton(
+          onPressed: open,
+          style: TextButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PopupValueText(options[value]!),
+              const SizedBox(width: 6),
+              const Icon(Icons.unfold_more_rounded, size: 18),
+            ],
+          ),
+        ),
+      ),
     ),
+  );
+}
+
+class _DockMaterialPreview extends StatelessWidget {
+  const _DockMaterialPreview({required this.preferences});
+  final Preferences preferences;
+  @override
+  Widget build(BuildContext context) {
+    final p = preferences;
+    final c = Theme.of(context).colorScheme;
+    return LiquidGlassScope(
+      enabled: p.liquidGlass != 'none',
+      quality: p.liquidGlass == 'standard'
+          ? LiquidGlassQuality.standard
+          : LiquidGlassQuality.ultra,
+      dockOpacity: p.dockOpacity,
+      dockBlur: p.dockBlur,
+      child: Container(
+        padding: const EdgeInsets.only(top: 16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              c.primaryContainer,
+              c.tertiaryContainer,
+              c.secondaryContainer,
+            ],
+          ),
+        ),
+        child: NavigationDock(
+          destinations: _navigationDestinations,
+          selectedIndex: 0,
+          onSelected: (_) {},
+        ),
+      ),
+    );
+  }
+}
+
+class _PreferenceSlider extends StatelessWidget {
+  const _PreferenceSlider({
+    required this.title,
+    required this.value,
+    required this.max,
+    required this.divisions,
+    required this.label,
+    required this.onChanged,
+    required this.onChangeEnd,
+    this.enabled = true,
+  });
+  final String title, label;
+  final double value, max;
+  final int divisions;
+  final bool enabled;
+  final ValueChanged<double> onChanged, onChangeEnd;
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+        child: Row(
+          children: [
+            Expanded(child: Text(title)),
+            Text(label),
+          ],
+        ),
+      ),
+      Slider(
+        value: value,
+        max: max,
+        divisions: divisions,
+        label: label,
+        semanticFormatterCallback: (_) => '$title $label',
+        onChanged: enabled ? onChanged : null,
+        onChangeEnd: enabled ? onChangeEnd : null,
+      ),
+    ],
   );
 }

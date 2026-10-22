@@ -40,6 +40,13 @@ void main() {
       ..colorStyle = 'neutral'
       ..textScale = 1.2
       ..fontFamily = 'serif';
+    store.preferences
+      ..dockOpacity = .3
+      ..dockBlur = 24
+      ..relearnGap = 5
+      ..studyHaptics = false
+      ..showStudyProgress = false
+      ..showRecallHint = false;
     await store.savePreferences();
     final restored = Preferences.fromJson(
       jsonDecode((await store.setting('preferences'))!) as Map<String, dynamic>,
@@ -51,10 +58,18 @@ void main() {
     expect(restored.colorStyle, 'neutral');
     expect(restored.textScale, 1.2);
     expect(restored.fontFamily, 'serif');
+    expect(restored.dockOpacity, .3);
+    expect(restored.dockBlur, 24);
+    expect(restored.relearnGap, 5);
+    expect(restored.studyHaptics, isFalse);
+    expect(restored.showStudyProgress, isFalse);
+    expect(restored.showRecallHint, isFalse);
     final legacy = Preferences.fromJson({'theme': 'dark', 'fontSize': 22});
     expect(legacy.theme, 'dark');
     expect(legacy.fontSize, 22);
     expect(legacy.liquidGlass, 'ultra');
+    expect(legacy.relearnGap, 3);
+    expect(legacy.dockBlur, 16);
   });
 
   test('资料库不自动加入计划，重复导入可跳过或保留', () async {
@@ -65,6 +80,19 @@ void main() {
     final two = await store.importCards('d', ['A'], keepDuplicates: true);
     expect(two.added, 1);
   });
+  test('当日重学使用设置中的间隔，重进仍保留队列', () async {
+    await store.putDeck(DeckData(id: 'd', name: '学习', newLimit: 5));
+    for (final id in ['a', 'b', 'c', 'd', 'e']) {
+      await add(id);
+    }
+    store.preferences.relearnGap = 1;
+    await store.prepareSession(at: now);
+    await store.grade(RecallGrade.forgot, elapsedMs: 1000, at: now);
+    final queue = (await store.prepareSession(at: now)).queue;
+    expect(queue.map((e) => e.cardId), ['b', 'a', 'c', 'd', 'e']);
+    expect(queue[1].stage, 'relearn');
+  });
+
   test('反复进入不突破每日新卡额度', () async {
     await add('a');
     await add('b');

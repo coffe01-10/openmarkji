@@ -9,6 +9,8 @@ extension GlassContext on BuildContext {
 
 abstract final class AppShape {
   static const full = StadiumBorder();
+  static RoundedSuperellipseBorder all(double radius) =>
+      of(BorderRadius.circular(radius));
   static RoundedSuperellipseBorder of(BorderRadius corners) =>
       RoundedSuperellipseBorder(borderRadius: corners);
 }
@@ -45,12 +47,31 @@ class GlyphIcon extends StatelessWidget {
 }
 
 abstract final class AppTextStyle {
+  static const subheadline = _AppTextStyle(15, 22);
   static TextStyle custom(
     BuildContext context, {
     required double size,
     required double leading,
     required FontWeight weight,
   }) => TextStyle(fontSize: size, height: leading / size, fontWeight: weight);
+}
+
+class _AppTextStyle {
+  const _AppTextStyle(this.size, this.leading);
+  final double size, leading;
+  TextStyle of(BuildContext context) =>
+      TextStyle(fontSize: size, height: leading / size);
+}
+
+double textWidthOf(BuildContext context, String text, TextStyle style) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+  )..layout();
+  final width = painter.width;
+  painter.dispose();
+  return width;
 }
 
 BorderSide focusRingSide(ColorScheme scheme) =>

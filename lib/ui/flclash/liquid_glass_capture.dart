@@ -943,11 +943,13 @@ class _Replay {
       return;
     }
     final saves = _saves.removeLast();
-    if (layer case ShaderMaskLayer(
-      :final shader?,
-      :final maskRect?,
-      :final blendMode?,
-    ) when !root) {
+    if (layer
+        case ShaderMaskLayer(
+          :final shader?,
+          :final maskRect?,
+          :final blendMode?,
+        )
+        when !root) {
       canvas
         ..translate(maskRect.left, maskRect.top)
         ..drawRect(
