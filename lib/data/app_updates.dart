@@ -6,7 +6,10 @@ import 'package:http/http.dart' as http;
 const appVersion = '1.0.1';
 const appDisplayVersion = '1.01';
 const appBuild = '2';
-const releaseFeed = String.fromEnvironment('OPENMARKJI_UPDATE_URL');
+const releaseFeed = String.fromEnvironment(
+  'OPENMARKJI_UPDATE_URL',
+  defaultValue: 'https://raw.githubusercontent.com/coffe01-10/openmarkji/master/releases.json',
+);
 
 class AppRelease {
   const AppRelease(this.version, this.notes, this.download);

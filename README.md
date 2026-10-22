@@ -38,7 +38,7 @@ Android 安装包：[1.01 发布页](https://github.com/coffe01-10/openmarkji/re
 
 学习偏好可以选择 MMX-5.0／MMX-6.0 作为新牌组默认算法，也可统一应用到已有牌组；切换版本时重置该牌组的自定义参数，保留卡片历史和当前复习日期，在下次正式评分时按历史重算。学习量统计按当前计划内卡片的近 7／30／90 个自然日计算，复习均值不包含首次学习、当日重学或专项练习。
 
-发布时可以通过 `--dart-define=OPENMARKJI_UPDATE_URL=https://你的域名/releases.json` 配置更新源。源文件格式为 `{"version":"1.1.0","notes":"更新说明","downloadUrl":"https://你的域名/download"}`，Web 使用时需要源站允许跨域。未配置时更新页会如实提示，应用仍可正常使用。
+应用默认使用仓库根目录的 [releases.json](releases.json) 检查更新，无需额外构建参数。发布新版本时同步更新该文件的三段式 `version`、`notes` 和 `downloadUrl`；例如显示版本 `1.01` 对应内部版本 `1.0.1`，下载地址指向 GitHub 最新 Release。也可通过 `--dart-define=OPENMARKJI_UPDATE_URL=https://你的域名/releases.json` 覆盖更新源，自定义源需允许 Web 跨域访问。
 
 ## 开发与构建
 

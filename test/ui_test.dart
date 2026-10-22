@@ -4,6 +4,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:openmarkji/data/app_updates.dart';
 import 'package:openmarkji/data/app_store.dart';
 import 'package:openmarkji/data/database.dart';
 import 'package:openmarkji/domain/entities.dart';
@@ -1058,9 +1061,22 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('检查更新'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, '检查更新'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('尚未配置更新源'), findsOneWidget);
+    expect(find.textContaining('尚未配置更新源'), findsNothing);
+    await http.runWithClient(
+      () async {
+        await tester.tap(find.widgetWithText(FilledButton, '检查更新'));
+        await tester.pumpAndSettle();
+      },
+      () => MockClient((request) async {
+        expect(request.url.toString(), releaseFeed);
+        return http.Response(
+          '{"version":"$appVersion","notes":"1.01 更新说明","downloadUrl":"https://github.com/coffe01-10/openmarkji/releases/latest"}',
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }),
+    );
+    expect(find.text('当前已是最新版本'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.tap(find.text('协议与政策'));

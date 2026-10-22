@@ -1,9 +1,32 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:openmarkji/data/app_updates.dart';
 
 void main() {
+  test('默认更新源已配置，仓库发布信息可识别当前版本', () async {
+    expect(releaseFeed, isNotEmpty);
+    final body = await File('releases.json').readAsString();
+    final release = await AppRelease.check(
+      Uri.parse(releaseFeed),
+      client: MockClient(
+        (_) async => http.Response(
+          body,
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        ),
+      ),
+    );
+    expect(release.version, appVersion);
+    expect(release.isNewer, isFalse);
+    expect(
+      release.download.toString(),
+      'https://github.com/coffe01-10/openmarkji/releases/latest',
+    );
+  });
+
   test('读取更新源并区分新版本与当前版本', () async {
     for (final version in [appVersion, '1.1.0', '1.0.0']) {
       final release = await AppRelease.check(
