@@ -914,8 +914,15 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('编辑保存关闭页面并清除草稿', (tester) async {
-    await store.putDeck(DeckData(id: 'd', name: '测试牌组'));
+  testWidgets('写卡页玻璃控件同步外观，窄屏长章节选择、草稿和保存正确', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    const chapter = '一个用于验证长标题不会溢出的章节名称';
+    await store.putDeck(DeckData(id: 'd', name: '测试牌组', chapters: [chapter]));
     await tester.pumpWidget(OpenMarkjiApp(store: store));
     await tester.pumpAndSettle();
     await tester.tap(find.text('牌组').last);
@@ -924,12 +931,57 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('写卡片'));
     await tester.pumpAndSettle();
+    for (final control in [
+      find.byTooltip('选择章节'),
+      find.byTooltip('预览卡片'),
+      find.text('保存'),
+      find.byTooltip('加粗'),
+    ]) {
+      expect(
+        find.ancestor(of: control, matching: find.byType(LiquidGlass)),
+        findsWidgets,
+      );
+    }
+    expect(find.byType(DropdownButton<String>), findsNothing);
+    store.updatePreferences((p) {
+      p.dockOpacity = .35;
+      p.dockBlur = 24;
+    });
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('选择章节'));
+    await tester.pumpAndSettle();
+    final menu = tester.widget<PopupMenuCard>(find.byType(PopupMenuCard));
+    expect(menu.glass!.blur, 24);
+    expect(menu.glass!.tint.a, closeTo(.35, .01));
+    await tester.tap(find.text(chapter));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getRect(find.byTooltip('选择章节')).right,
+      lessThanOrEqualTo(340),
+    );
     await tester.enterText(find.byType(TextField).last, '问题\n---\n答案');
     await tester.pump(const Duration(milliseconds: 600));
+    expect(decodeObject((await store.setting('draft:d'))!)['chapter'], chapter);
+    await tester.tap(find.byTooltip('预览卡片'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('返回编辑'));
+    await tester.pumpAndSettle();
+    store.updatePreferences((p) => p.liquidGlass = 'none');
+    await tester.pumpAndSettle();
+    expect(find.byType(LiquidGlass), findsNothing);
+    await tester.tap(find.byTooltip('选择章节'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<PopupMenuCard>(find.byType(PopupMenuCard)).glass,
+      isNull,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
     expect(find.text('写一张新卡'), findsNothing);
     expect((await store.cards(deckId: 'd')).single.source, '问题\n---\n答案');
+    expect((await store.cards(deckId: 'd')).single.chapter, chapter);
     expect(await store.setting('draft:d'), isNull);
     expect(tester.takeException(), isNull);
   });

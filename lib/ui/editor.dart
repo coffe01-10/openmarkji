@@ -175,26 +175,35 @@ class _EditorPageState extends State<_EditorPage> {
                 ),
               ),
               const SizedBox(width: 12),
-              DropdownButton<String>(
-                value: _chapter,
-                items: {'', ...widget.deck.chapters, _chapter}
-                    .map(
-                      (s) => DropdownMenuItem(
-                        value: s,
-                        child: SizedBox(
-                          width: 95,
-                          child: Text(
-                            s.isEmpty ? '未分类' : s,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+              SizedBox(
+                width: math.min(152, MediaQuery.sizeOf(context).width * .38),
+                child: _ActionMenu<String>(
+                  tooltip: '选择章节',
+                  selected: _chapter,
+                  options: {
+                    for (final chapter in {
+                      '',
+                      ...widget.deck.chapters,
+                      _chapter,
+                    })
+                      chapter: chapter.isEmpty ? '未分类' : chapter,
+                  },
+                  onSelected: (chapter) {
+                    setState(() => _chapter = chapter);
+                    _edited();
+                  },
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: PopupValueText(
+                          _chapter.isEmpty ? '未分类' : _chapter,
                         ),
                       ),
-                    )
-                    .toList(),
-                onChanged: (s) {
-                  setState(() => _chapter = s!);
-                  _edited();
-                },
+                      const SizedBox(width: 6),
+                      const Icon(Icons.unfold_more_rounded, size: 18),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
@@ -243,18 +252,30 @@ class _EditorPageState extends State<_EditorPage> {
           leading: _appearanceBack(context),
           title: Text(widget.card == null ? '写一张新卡' : '编辑卡片'),
           actions: [
-            if (!wide)
-              IconButton(
-                tooltip: _preview ? '返回编辑' : '预览卡片',
-                onPressed: () => setState(() => _preview = !_preview),
-                icon: Icon(
-                  _preview ? Icons.edit_outlined : Icons.visibility_outlined,
+            _GlassToolbar(
+              children: [
+                if (!wide)
+                  IconButton(
+                    tooltip: _preview ? '返回编辑' : '预览卡片',
+                    onPressed: () => setState(() => _preview = !_preview),
+                    icon: Icon(
+                      _preview
+                          ? Icons.edit_outlined
+                          : Icons.visibility_outlined,
+                    ),
+                  ),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(52, 44),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    foregroundColor: Theme.of(context).colorScheme.onSurface,
+                  ),
+                  onPressed: _saving || !_ready ? null : _save,
+                  child: Text(_saving ? '保存中…' : '保存'),
                 ),
-              ),
-            TextButton(
-              onPressed: _saving || !_ready ? null : _save,
-              child: Text(_saving ? '保存中…' : '保存'),
+              ],
             ),
+            const SizedBox(width: 16),
           ],
         ),
         body: SafeArea(
@@ -297,7 +318,7 @@ class _EditorPageState extends State<_EditorPage> {
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
-                child: Row(
+                child: _GlassToolbar(
                   children: [
                     IconButton(
                       tooltip: '加粗',
