@@ -74,6 +74,15 @@ class _SettingsPage extends StatelessWidget {
   }
 }
 
+Route<dynamic>? _topRoute(NavigatorState navigator) {
+  Route<dynamic>? top;
+  navigator.popUntil((route) {
+    top = route;
+    return true;
+  });
+  return top;
+}
+
 const _settingsCorner = 28.0;
 
 Color _settingsCanvas(ColorScheme scheme) =>
@@ -148,18 +157,41 @@ class _SettingsLinkState extends State<_SettingsLink> {
     }
     HapticFeedback.selectionClick();
     final closed = _tile();
-    final motion = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : const Duration(milliseconds: 300);
+    final disabled = MediaQuery.disableAnimationsOf(context);
     setState(() => _holdHeight = rect.height);
+    final navigator = Navigator.of(context);
+    // 同一帧里先 pop 再 push 会让 Flutter 丢掉正在进行的过渡。
+    // 延后一帧再展开下一行，上一段才能反向收回并与新的展开重叠。
+    final top = _topRoute(navigator);
+    final transitioning =
+        top is _RowExpandRoute && top.animation?.isCompleted == false;
+    if (transitioning && top.animation?.status == AnimationStatus.forward) {
+      navigator.pop();
+    }
+    if (transitioning) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _pushExpand(navigator, closed, rect, disabled);
+      });
+      return;
+    }
+    await _pushExpand(navigator, closed, rect, disabled);
+  }
+
+  Future<void> _pushExpand(
+    NavigatorState navigator,
+    Widget closed,
+    Rect rect,
+    bool disabled,
+  ) async {
     final route = _RowExpandRoute(
       source: rect,
       closedRadius: widget.radius,
       closed: closed,
       page: widget.page,
-      transition: motion,
+      transition: disabled ? Duration.zero : const Duration(milliseconds: 300),
     );
-    await Navigator.of(context).push(route);
+    await navigator.push(route);
     // push 的 Future 在开始返回时完成；此时动画中的行仍然可见。
     await route.completed;
     if (mounted) setState(() => _holdHeight = null);
@@ -246,6 +278,7 @@ class _SettingsTile extends StatelessWidget {
 
 /// 行矩形展开到整页。节奏对齐 FlClash `_OpenContainerRoute`：300ms，
 /// fastOutSlowIn；打开页在进入的 0.2-0.4 淡入，返回时在 0.8-0.6 淡出。
+/// 连续点另一行时，旧路由反向收起和新路由正向展开同时进行。
 class _RowExpandRoute extends PageRoute<void> {
   _RowExpandRoute({
     required this.source,
@@ -261,11 +294,38 @@ class _RowExpandRoute extends PageRoute<void> {
   final Widget page;
   final Duration transition;
 
+  /// 上一段动画的方向。中途被反向打断时，曲线要沿用打断前的方向，
+  /// 对齐 FlClash `_transitionWasInterrupted`：只有完整走完再折返才换曲线。
+  AnimationStatus? _lastStatus;
+  AnimationStatus? _currentStatus;
+
+  bool get closing {
+    final animation = this.animation;
+    if (animation == null) return false;
+    final interrupted =
+        (_lastStatus?.isAnimating ?? false) &&
+        (_currentStatus?.isAnimating ?? false);
+    return animation.status == AnimationStatus.reverse && !interrupted;
+  }
+
   @override
   Duration get transitionDuration => transition;
 
   @override
+  Duration get reverseTransitionDuration => transition;
+
+  @override
   bool get opaque => true;
+
+  @override
+  TickerFuture didPush() {
+    animation!.addStatusListener((status) {
+      _lastStatus = _currentStatus;
+      _currentStatus = status;
+    });
+    // 监听要先于首次 forward，中途折返才能认出上一段仍在播放。
+    return super.didPush();
+  }
 
   @override
   bool get barrierDismissible => false;
@@ -275,6 +335,10 @@ class _RowExpandRoute extends PageRoute<void> {
 
   @override
   String? get barrierLabel => null;
+
+  /// 默认遮罩会铺满整页并吃掉点击。展开途中只由卡片本身接点击。
+  @override
+  Widget buildModalBarrier() => const SizedBox.shrink();
 
   @override
   bool get maintainState => true;
@@ -294,6 +358,7 @@ class _RowExpandRoute extends PageRoute<void> {
     Widget child,
   ) {
     return _RowExpandTransition(
+      route: this,
       animation: animation,
       source: source,
       closedRadius: closedRadius,
@@ -305,6 +370,7 @@ class _RowExpandRoute extends PageRoute<void> {
 
 class _RowExpandTransition extends StatelessWidget {
   const _RowExpandTransition({
+    required this.route,
     required this.animation,
     required this.source,
     required this.closedRadius,
@@ -312,6 +378,7 @@ class _RowExpandTransition extends StatelessWidget {
     required this.open,
   });
 
+  final _RowExpandRoute route;
   final Animation<double> animation;
   final Rect source;
   final BorderRadius closedRadius;
@@ -321,15 +388,15 @@ class _RowExpandTransition extends StatelessWidget {
   double _progress() {
     final t = animation.value;
     if (t == 0 || t == 1) return t;
-    final curve = animation.status == AnimationStatus.reverse
+    final curve = route.closing
         ? Curves.fastOutSlowIn.flipped
         : Curves.fastOutSlowIn;
     return curve.transform(t);
   }
 
   double _fade() {
-    if (animation.value == 1) return 1;
-    final start = animation.status == AnimationStatus.reverse ? 0.6 : 0.2;
+    if (animation.value == 1 && !route.closing) return 1;
+    final start = route.closing ? 0.6 : 0.2;
     return ((animation.value - start) / 0.2).clamp(0.0, 1.0);
   }
 
@@ -354,57 +421,65 @@ class _RowExpandTransition extends StatelessWidget {
             final fade = _fade();
             final shape = RoundedSuperellipseBorder(borderRadius: radius);
             final scale = source.width == 0 ? 1.0 : rect.width / source.width;
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                const Positioned.fill(
-                  child: ModalBarrier(
-                    color: Colors.transparent,
-                    dismissible: false,
-                  ),
-                ),
-                Positioned.fromRect(
-                  rect: rect,
-                  child: ClipPath(
-                    clipper: ShapeBorderClipper(shape: shape),
-                    child: ColoredBox(
-                      color: _settingsCard(Theme.of(context).colorScheme),
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          OverflowBox(
-                            alignment: Alignment.topLeft,
-                            minWidth: source.width,
-                            maxWidth: source.width,
-                            minHeight: source.height,
-                            maxHeight: source.height,
-                            child: Transform.scale(
+            // 卡片还没铺满时不接点击，下面被盖住的行仍能点到。
+            return IgnorePointer(
+              ignoring: progress < 1,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (progress >= 1)
+                    const Positioned.fill(
+                      child: ModalBarrier(
+                        color: Colors.transparent,
+                        dismissible: false,
+                      ),
+                    ),
+                  Positioned.fromRect(
+                    rect: rect,
+                    child: ClipPath(
+                      clipper: ShapeBorderClipper(shape: shape),
+                      child: ColoredBox(
+                        color: _settingsCard(Theme.of(context).colorScheme),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            const Positioned.fill(
+                              child: AbsorbPointer(child: SizedBox.expand()),
+                            ),
+                            OverflowBox(
                               alignment: Alignment.topLeft,
-                              scale: scale,
-                              child: ExcludeFocus(
-                                child: ExcludeSemantics(
-                                  child: IgnorePointer(child: closed),
+                              minWidth: source.width,
+                              maxWidth: source.width,
+                              minHeight: source.height,
+                              maxHeight: source.height,
+                              child: Transform.scale(
+                                alignment: Alignment.topLeft,
+                                scale: scale,
+                                child: ExcludeFocus(
+                                  child: ExcludeSemantics(
+                                    child: IgnorePointer(child: closed),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          OverflowBox(
-                            alignment: Alignment.topLeft,
-                            minWidth: full.width,
-                            maxWidth: full.width,
-                            minHeight: full.height,
-                            maxHeight: full.height,
-                            child: IgnorePointer(
-                              ignoring: fade == 0,
-                              child: Opacity(opacity: fade, child: open),
+                            OverflowBox(
+                              alignment: Alignment.topLeft,
+                              minWidth: full.width,
+                              maxWidth: full.width,
+                              minHeight: full.height,
+                              maxHeight: full.height,
+                              child: IgnorePointer(
+                                ignoring: fade == 0,
+                                child: Opacity(opacity: fade, child: open),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             );
           },
         );

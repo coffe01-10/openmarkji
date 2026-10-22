@@ -894,6 +894,54 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('设置展开未完成时点另一行会立刻反向切换', (tester) async {
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('设置').last);
+    await tester.pumpAndSettle();
+
+    Finder row(String title) => find.byWidgetPredicate(
+      (widget) =>
+          widget is Text &&
+          widget.data == title &&
+          widget.style?.fontWeight == FontWeight.w500,
+    );
+
+    Future<void> interrupt(String from, String to) async {
+      await tester.tap(row(from));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(row(to), findsOneWidget);
+      await tester.tap(row(to));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        tester.allWidgets
+            .whereType<Text>()
+            .where((text) => text.data == to)
+            .length,
+        greaterThanOrEqualTo(2),
+      );
+    }
+
+    await interrupt('外观与阅读', '学习偏好');
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.tap(row('卡片与交互'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(
+      tester.allWidgets
+          .whereType<Text>()
+          .where((text) => text.data == '卡片与交互')
+          .length,
+      greaterThanOrEqualTo(2),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('学习触感反馈'), findsOneWidget);
+    expect(find.text('主题模式'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('固定导航下玻璃质感可调，滑块实时同步切换栏、按钮、搜索和菜单', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
