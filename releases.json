@@ -1,5 +1,5 @@
 {
-  "version": "1.0.1",
-  "notes": "OpenMarkji 1.01：统一液态玻璃交互和外观设置，支持学习统计、卡片管理、MMX 调度及本地备份。本次同版本修订补上默认更新源和 Android 联网权限。",
+  "version": "1.0.2",
+  "notes": "OpenMarkji 1.02：牌组支持长按拖拽排序并保存顺序，官方牌组禁止删除；修复拖动原位释放、连续排序和专项练习选项切换时的闪烁与加载占位；适配 Android 沉浸式状态栏，改进学习统计、设置过渡和开源许可说明。",
   "downloadUrl": "https://github.com/coffe01-10/openmarkji/releases/latest"
 }

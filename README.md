@@ -50,7 +50,7 @@
 
 ### Android 安装
 
-[1.01 发布页](https://github.com/coffe01-10/openmarkji/releases/tag/v1.01)。大多数手机选择 ARM64 APK；旧设备可在发布页选择对应架构。
+[1.02 发布页](https://github.com/coffe01-10/openmarkji/releases/tag/v1.02)。大多数手机选择 ARM64 APK；旧设备可在发布页选择对应架构。
 
 1. 新建牌组，导入文本或写卡片
 2. 在牌组中勾选卡片，点击"加入计划"

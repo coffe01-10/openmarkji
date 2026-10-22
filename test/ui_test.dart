@@ -1518,7 +1518,7 @@ void main() {
       () => MockClient((request) async {
         expect(request.url.toString(), releaseFeed);
         return http.Response(
-          '{"version":"$appVersion","notes":"1.01 更新说明","downloadUrl":"https://github.com/coffe01-10/openmarkji/releases/latest"}',
+          '{"version":"$appVersion","notes":"$appDisplayVersion 更新说明","downloadUrl":"https://github.com/coffe01-10/openmarkji/releases/latest"}',
           200,
           headers: {'content-type': 'application/json; charset=utf-8'},
         );
