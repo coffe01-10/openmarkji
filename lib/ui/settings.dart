@@ -311,13 +311,31 @@ class _RowExpandRoute extends PageRoute<void> {
     required this.closed,
     required this.page,
     required this.transition,
-  });
+  }) : _snapshot = SnapshotController(
+         allowSnapshotting: transition > Duration.zero,
+       );
 
   final Rect source;
   final BorderRadius closedRadius;
   final Widget closed;
   final Widget page;
   final Duration transition;
+  late final SnapshotController _snapshot;
+
+  /// 进场第一帧路由会把代理动画临时标成完成，用来离屏排版。
+  /// 快照要跟控制器的真实进度走，不能跟这个临时状态走。
+  void _syncSnapshot() {
+    final controller = super.animation;
+    final moving =
+        transition > Duration.zero &&
+        controller != null &&
+        controller.status.isAnimating &&
+        controller.value > 0 &&
+        controller.value < 1;
+    if (_snapshot.allowSnapshotting != moving) {
+      _snapshot.allowSnapshotting = moving;
+    }
+  }
 
   /// 上一段动画的方向。中途被反向打断时，曲线要沿用打断前的方向，
   /// 沿用上游 `_transitionWasInterrupted`：只有完整走完再折返才换曲线。
@@ -348,8 +366,16 @@ class _RowExpandRoute extends PageRoute<void> {
       _lastStatus = _currentStatus;
       _currentStatus = status;
     });
+    super.animation!.addListener(_syncSnapshot);
     // 监听要先于首次 forward，中途折返才能认出上一段仍在播放。
     return super.didPush();
+  }
+
+  @override
+  void dispose() {
+    super.animation?.removeListener(_syncSnapshot);
+    _snapshot.dispose();
+    super.dispose();
   }
 
   @override
@@ -388,7 +414,7 @@ class _RowExpandRoute extends PageRoute<void> {
       source: source,
       closedRadius: closedRadius,
       closed: closed,
-      open: child,
+      open: SnapshotWidget(controller: _snapshot, child: child),
     );
   }
 }
@@ -691,83 +717,101 @@ class _BackupPageState extends State<_BackupPage> {
   Widget build(BuildContext context) {
     return _SettingsDetail(
       title: '资料与备份',
-      child: _AppearanceCard(
-        child: Column(
-          children: [
-            ListTile(
+      child: Column(
+        children: [
+          _AppearanceCard(
+            child: Column(
+              children: [
+                ListTile(
+                  enabled: !_working,
+                  leading: const Icon(Icons.save_alt_rounded),
+                  title: const Text('导出完整备份'),
+                  subtitle: const Text(
+                    '包含卡片、图片、学习记录和设置',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _backupTask(() async {
+                    await _saveBytes(
+                      'OpenMarkji-${dayKey(DateTime.now())}.zip',
+                      await widget.store.backup(),
+                    );
+                  }),
+                ),
+                ListTile(
+                  enabled: !_working,
+                  leading: const Icon(Icons.restore_page_outlined),
+                  title: const Text('从备份恢复'),
+                  subtitle: const Text(
+                    '替换当前资料，恢复前保留一份旧数据',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _backupTask(() async {
+                    final result = await FilePicker.platform.pickFiles(
+                      type: FileType.custom,
+                      allowedExtensions: ['zip'],
+                      withData: true,
+                    );
+                    final bytes = result?.files.firstOrNull?.bytes;
+                    if (bytes == null || !context.mounted) return;
+                    if (!await _confirm(
+                      context,
+                      '恢复这份备份？',
+                      '当前资料将被替换。恢复前的数据会保留在“导出恢复前的资料”中。',
+                    )) {
+                      return;
+                    }
+                    await widget.store.restore(bytes);
+                    if (context.mounted) _toast(context, '已恢复资料、图片和学习进度');
+                  }),
+                ),
+                _Load(
+                  future: widget.store
+                      .setting('recoveryBackup')
+                      .then((s) => s != null),
+                  builder: (exists) => !exists
+                      ? const SizedBox.shrink()
+                      : ListTile(
+                          enabled: !_working,
+                          leading: const Icon(Icons.history_rounded),
+                          title: const Text('导出恢复前的资料'),
+                          onTap: () => _backupTask(() async {
+                            final saved = await widget.store.setting(
+                              'recoveryBackup',
+                            );
+                            if (saved != null) {
+                              await _saveBytes(
+                                'OpenMarkji-before-restore.zip',
+                                base64Decode(saved),
+                              );
+                            }
+                          }),
+                        ),
+                ),
+                if (_working)
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: LinearProgressIndicator(),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _AppearanceCard(
+            child: ListTile(
               enabled: !_working,
-              leading: const Icon(Icons.save_alt_rounded),
-              title: const Text('导出完整备份'),
+              leading: const Icon(Icons.cloud_outlined),
+              title: const Text('WebDAV 备份'),
               subtitle: const Text(
-                '包含卡片、图片、学习记录和设置',
+                '连接服务器，上传或恢复完整备份',
                 style: TextStyle(fontSize: 12),
               ),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () => _backupTask(() async {
-                await _saveBytes(
-                  'OpenMarkji-${dayKey(DateTime.now())}.zip',
-                  await widget.store.backup(),
-                );
-              }),
+              onTap: () => _push(context, _WebDavPage(store: widget.store)),
             ),
-            ListTile(
-              enabled: !_working,
-              leading: const Icon(Icons.restore_page_outlined),
-              title: const Text('从备份恢复'),
-              subtitle: const Text(
-                '替换当前资料，恢复前保留一份旧数据',
-                style: TextStyle(fontSize: 12),
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _backupTask(() async {
-                final result = await FilePicker.platform.pickFiles(
-                  type: FileType.custom,
-                  allowedExtensions: ['zip'],
-                  withData: true,
-                );
-                final bytes = result?.files.firstOrNull?.bytes;
-                if (bytes == null || !context.mounted) return;
-                if (!await _confirm(
-                  context,
-                  '恢复这份备份？',
-                  '当前资料将被替换。恢复前的数据会保留在“导出恢复前的资料”中。',
-                )) {
-                  return;
-                }
-                await widget.store.restore(bytes);
-                if (context.mounted) _toast(context, '已恢复资料、图片和学习进度');
-              }),
-            ),
-            _Load(
-              future: widget.store
-                  .setting('recoveryBackup')
-                  .then((s) => s != null),
-              builder: (exists) => !exists
-                  ? const SizedBox.shrink()
-                  : ListTile(
-                      enabled: !_working,
-                      leading: const Icon(Icons.history_rounded),
-                      title: const Text('导出恢复前的资料'),
-                      onTap: () => _backupTask(() async {
-                        final saved = await widget.store.setting(
-                          'recoveryBackup',
-                        );
-                        if (saved != null) {
-                          await _saveBytes(
-                            'OpenMarkji-before-restore.zip',
-                            base64Decode(saved),
-                          );
-                        }
-                      }),
-                    ),
-            ),
-            if (_working)
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: LinearProgressIndicator(),
-              ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

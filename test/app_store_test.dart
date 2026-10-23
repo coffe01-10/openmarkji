@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openmarkji/algorithms/mmx.dart';
@@ -321,7 +322,56 @@ void main() {
     );
     await store.prepareSession(at: now);
     await store.grade(RecallGrade.forgot, elapsedMs: 1000, at: now);
+    await store.putDeck(DeckData(id: 'shared', name: '共享'));
+    await store.db.customStatement('INSERT INTO card_decks VALUES (?,?)', [
+      'a',
+      'shared',
+    ]);
+    await store.setSetting(AppStore.webDavSetting, 'local-credential');
     final bytes = await store.backup();
+    final fresh = AppStore(
+      AppDatabase(NativeDatabase.memory()),
+      loadOfficialDecks: false,
+    );
+    await fresh.initialize(legacy: {});
+    await fresh.setSetting(AppStore.webDavSetting, 'other-device-credential');
+    try {
+      await fresh.restore(bytes);
+      expect((await fresh.cards(deckId: 'd')).single.id, 'a');
+      expect((await fresh.cards(deckId: 'shared')).single.id, 'a');
+      expect(
+        await fresh.setting(AppStore.webDavSetting),
+        'other-device-credential',
+      );
+      await fresh.clearSetting(AppStore.webDavSetting);
+      await fresh.restore(bytes);
+      expect(await fresh.setting(AppStore.webDavSetting), isNull);
+      final legacy =
+          decodeObject(
+              utf8.decode(
+                ZipDecoder()
+                    .decodeBytes(bytes)
+                    .findFile('openmarkji.json')!
+                    .content,
+              ),
+            )
+            ..remove('card_decks')
+            ..remove('practice_activity');
+      final legacyJson = utf8.encode(jsonEncode(legacy));
+      await fresh.restore(
+        Uint8List.fromList(
+          ZipEncoder().encode(
+            Archive()..addFile(
+              ArchiveFile('openmarkji.json', legacyJson.length, legacyJson),
+            ),
+          ),
+        ),
+      );
+      expect((await fresh.cards(deckId: 'd')).single.id, 'a');
+    } finally {
+      fresh.dispose();
+      await fresh.db.close();
+    }
     await add('later');
     await store.restore(bytes);
     expect(await store.card('later'), isNull);

@@ -202,6 +202,7 @@ class _PracticePage extends StatefulWidget {
 class _PracticePageState extends State<_PracticePage> {
   PracticeSession? _session;
   StudyCard? _card;
+  final _elapsed = Stopwatch();
   bool _busy = true, _revealed = false;
   @override
   void initState() {
@@ -221,6 +222,9 @@ class _PracticePageState extends State<_PracticePage> {
           _card = card;
           _revealed = false;
           _busy = false;
+          _elapsed
+            ..reset()
+            ..start();
         });
       }
     } catch (e) {
@@ -234,10 +238,17 @@ class _PracticePageState extends State<_PracticePage> {
   Future<void> _grade(RecallGrade grade) => _action(context, () async {
     setState(() => _busy = true);
     try {
-      await widget.store.gradePractice(grade);
+      _elapsed.stop();
+      await widget.store.gradePractice(
+        grade,
+        elapsedMs: _elapsed.elapsedMilliseconds,
+      );
       await _load();
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        _elapsed.start();
+        setState(() => _busy = false);
+      }
     }
   });
   @override

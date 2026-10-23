@@ -95,15 +95,19 @@ void main() {
     final original = (await store.card('a'))!.toJson();
     final session = await store.startPractice('d', limit: 10, shuffle: false);
     expect(session.queue, ['a', 'b']);
-    await store.gradePractice(RecallGrade.forgot);
+    await store.gradePractice(RecallGrade.forgot, elapsedMs: 1200, at: now);
     expect((await store.preparePractice())!.queue, ['b', 'a']);
     final restored = PracticeSession.fromJson(
       jsonDecode((await store.setting('practiceSession'))!),
     );
     expect(restored.mistakes, ['a']);
     expect(restored.attempts, 1);
-    await store.gradePractice(RecallGrade.know);
-    await store.gradePractice(RecallGrade.familiar);
+    await store.gradePractice(RecallGrade.know, elapsedMs: 800, at: now);
+    await store.gradePractice(
+      RecallGrade.familiar,
+      elapsedMs: 2500,
+      at: now.add(const Duration(days: 1)),
+    );
     final result = (await store.practiceSession())!;
     expect(result.queue, isEmpty);
     expect(result.completed, 2);
@@ -117,6 +121,15 @@ void main() {
     await store.clearSetting('practiceSession');
     await store.restore(backup);
     expect((await store.practiceSession())!.completed, 2);
+    expect(await store.totalStudyTime(), 4500);
+    expect((await store.studySummary(at: now))['elapsed'], 2000);
+    expect(
+      (await store.studySummary(
+        at: now.add(const Duration(days: 1)),
+      ))['elapsed'],
+      2500,
+    );
+    expect((await store.activity()).first['independent'], 1);
   });
 
   test('专项练习跳过已删除卡片，空范围不会覆盖未完成进度', () async {

@@ -6,7 +6,7 @@ import 'connection.dart';
 class AppDatabase extends GeneratedDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? openConnection());
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
   @override
   Iterable<TableInfo<Table, Object?>> get allTables => const [];
   @override
@@ -25,6 +25,8 @@ class AppDatabase extends GeneratedDatabase {
         'CREATE TABLE reviews (id TEXT PRIMARY KEY, card_id TEXT NOT NULL, deck_id TEXT NOT NULL, reviewed_at INTEGER NOT NULL, grade INTEGER NOT NULL, kind TEXT NOT NULL, elapsed_ms INTEGER NOT NULL, payload TEXT NOT NULL)',
         'CREATE INDEX reviews_card ON reviews(card_id, reviewed_at)',
         'CREATE INDEX reviews_day ON reviews(kind, reviewed_at)',
+        'CREATE TABLE practice_activity (id TEXT PRIMARY KEY, studied_at INTEGER NOT NULL, elapsed_ms INTEGER NOT NULL)',
+        'CREATE INDEX practice_activity_day ON practice_activity(studied_at)',
         'CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
         'CREATE TABLE media (id TEXT PRIMARY KEY, name TEXT NOT NULL, bytes BLOB NOT NULL)',
         'CREATE TABLE card_decks (card_id TEXT NOT NULL, deck_id TEXT NOT NULL, PRIMARY KEY (card_id, deck_id))',
@@ -48,6 +50,14 @@ class AppDatabase extends GeneratedDatabase {
         );
         await customStatement(
           'CREATE INDEX cards_first_learned ON cards(first_learned)',
+        );
+      }
+      if (from < 4) {
+        await customStatement(
+          'CREATE TABLE practice_activity (id TEXT PRIMARY KEY, studied_at INTEGER NOT NULL, elapsed_ms INTEGER NOT NULL)',
+        );
+        await customStatement(
+          'CREATE INDEX practice_activity_day ON practice_activity(studied_at)',
         );
       }
     },

@@ -156,6 +156,14 @@ class _TodayPage extends StatelessWidget {
                                 ),
                               ),
                             ],
+                            const SizedBox(height: 12),
+                            Text(
+                              '今日学习时间 · ${_studyTime(data['elapsed'] as int)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: c.onPrimaryContainer,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -413,32 +421,91 @@ class _OrbitPainter extends CustomPainter {
   bool shouldRepaint(_OrbitPainter oldDelegate) => oldDelegate.color != color;
 }
 
+String _studyTime(int milliseconds) {
+  final seconds = (milliseconds / 1000).ceil();
+  if (seconds < 60) return '$seconds 秒';
+  final minutes = seconds ~/ 60;
+  if (minutes < 60) return '$minutes 分 ${seconds % 60} 秒';
+  return '${minutes ~/ 60} 小时 ${minutes % 60} 分';
+}
+
 class _Metric extends StatelessWidget {
-  const _Metric({required this.label, required this.value, required this.icon});
+  const _Metric({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.fontSize = 27,
+    this.unit,
+  });
   final String label, value;
   final IconData icon;
+  final double fontSize;
+  final String? unit;
   @override
   Widget build(BuildContext context) {
     final c = Theme.of(context).colorScheme;
+    final scaler = MediaQuery.textScalerOf(context);
     return _Panel(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 19, color: c.primary),
+          SizedBox(
+            height: math.max(19, scaler.scale(10) * 1.2),
+            child: Row(
+              children: [
+                Icon(icon, size: 19, color: c.primary),
+                if (unit != null) ...[
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        unit!,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: c.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
           const SizedBox(height: 15),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 27,
-              fontWeight: FontWeight.w600,
-              letterSpacing: -1,
+          SizedBox(
+            height: scaler.scale(27) * 1.3,
+            width: double.infinity,
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: fontSize,
+                  height: 1.2,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -1,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(fontSize: 12, color: c.onSurfaceVariant),
+          SizedBox(
+            height: scaler.scale(12) * 1.4 * 2,
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.4,
+                color: c.onSurfaceVariant,
+              ),
+            ),
           ),
         ],
       ),
@@ -553,6 +620,220 @@ Future<void> _openDeckCard(
   );
 }
 
+class _StudyCalendar extends StatefulWidget {
+  const _StudyCalendar({required this.activity});
+  final List<Map<String, dynamic>> activity;
+  @override
+  State<_StudyCalendar> createState() => _StudyCalendarState();
+}
+
+class _StudyCalendarState extends State<_StudyCalendar> {
+  late DateTime _month;
+  DateTime _selected = dayStart(DateTime.now());
+
+  @override
+  void initState() {
+    super.initState();
+    _month = DateTime(_selected.year, _selected.month);
+  }
+
+  void _move(int months) => setState(() {
+    _month = DateTime(_month.year, _month.month + months);
+    _selected = _month;
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).colorScheme;
+    final activity = {
+      for (final row in widget.activity) row['day'] as String: row,
+    };
+    final leading = _month.weekday - 1;
+    final days = DateTime(_month.year, _month.month + 1, 0).day;
+    final cellHeight = math.max(
+      44.0,
+      MediaQuery.textScalerOf(context).scale(14) * 1.3 + 20,
+    );
+    final today = dayKey(DateTime.now());
+    final selected = activity[dayKey(_selected)];
+    final count = selected == null
+        ? 0
+        : (selected['formal'] as int) +
+              (selected['practice'] as int) +
+              (selected['independent'] as int? ?? 0);
+    return _Panel(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              _GlassToolbar(
+                children: [
+                  IconButton(
+                    tooltip: '上个月',
+                    onPressed: () => _move(-1),
+                    icon: const Icon(Icons.chevron_left_rounded),
+                  ),
+                ],
+              ),
+              Expanded(
+                child: Center(
+                  child: Text(
+                    '${_month.year}年${_month.month}月',
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              _GlassToolbar(
+                children: [
+                  IconButton(
+                    tooltip: '下个月',
+                    onPressed: () => _move(1),
+                    icon: const Icon(Icons.chevron_right_rounded),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              for (final weekday in ['一', '二', '三', '四', '五', '六', '日'])
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      weekday,
+                      style: TextStyle(fontSize: 12, color: c.onSurfaceVariant),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (var week = 0; week < 6; week++)
+            Row(
+              children: [
+                for (var column = 0; column < 7; column++)
+                  Expanded(
+                    child: Builder(
+                      builder: (context) {
+                        final day = week * 7 + column - leading + 1;
+                        if (day < 1 || day > days) {
+                          return SizedBox(height: cellHeight + 4);
+                        }
+                        final date = DateTime(_month.year, _month.month, day);
+                        final key = dayKey(date);
+                        final row = activity[key];
+                        final total = row == null
+                            ? 0
+                            : (row['formal'] as int) +
+                                  (row['practice'] as int) +
+                                  (row['independent'] as int? ?? 0);
+                        final isSelected = dayKey(_selected) == key;
+                        return Semantics(
+                          label: '$key，$total 次回忆${key == today ? '，今天' : ''}',
+                          selected: isSelected,
+                          button: true,
+                          child: ExcludeSemantics(
+                            child: Tooltip(
+                              message: '$key · $total 次回忆',
+                              child: Padding(
+                                padding: const EdgeInsets.all(2),
+                                child: Material(
+                                  color: isSelected
+                                      ? c.primaryContainer
+                                      : total > 0
+                                      ? c.primary.withValues(
+                                          alpha:
+                                              .08 +
+                                              math.min(total, 20) / 20 * .15,
+                                        )
+                                      : Colors.transparent,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    side: key == today
+                                        ? BorderSide(color: c.primary)
+                                        : BorderSide.none,
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: InkWell(
+                                    onTap: () =>
+                                        setState(() => _selected = date),
+                                    child: SizedBox(
+                                      height: cellHeight,
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                              '$day',
+                                              maxLines: 1,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                height: 1.2,
+                                                fontWeight:
+                                                    key == today || isSelected
+                                                    ? FontWeight.w700
+                                                    : FontWeight.w400,
+                                                color: isSelected
+                                                    ? c.onPrimaryContainer
+                                                    : c.onSurface,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 3),
+                                          Container(
+                                            width: 4,
+                                            height: 4,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: total > 0
+                                                  ? c.primary
+                                                  : Colors.transparent,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: MediaQuery.textScalerOf(context).scale(12) * 1.6 * 2,
+            child: Center(
+              child: Text(
+                '${_selected.month}月${_selected.day}日 · $count 次回忆 · ${_studyTime(selected?['elapsed'] as int? ?? 0)}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 1.6,
+                  color: c.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _StatsPage extends StatelessWidget {
   const _StatsPage({required this.store});
   final AppStore store;
@@ -560,7 +841,11 @@ class _StatsPage extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: store,
     builder: (context, _) => _Load(
-      future: Future.wait([store.studySummary(), store.activity()]),
+      future: Future.wait([
+        store.studySummary(),
+        store.activity(),
+        store.totalStudyTime(),
+      ]),
       builder: (data) {
         final overview = data[0] as Map<String, dynamic>,
             activity = data[1] as List<Map<String, dynamic>>;
@@ -574,105 +859,90 @@ class _StatsPage extends StatelessWidget {
           children: [
             _StatisticsViews(store: store),
             const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: _Metric(
-                    label: '今日首次回忆',
-                    value: '$formal',
-                    icon: Icons.check_circle_outline,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _Metric(
-                    label: '认识与熟知',
-                    value: formal == 0
-                        ? '—'
-                        : '${((overview['recalled'] as int) / formal * 100).round()}%',
-                    icon: Icons.psychology_outlined,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _Metric(
-                    label: '学习分钟',
-                    value: '${((overview['elapsed'] as int) / 60000).ceil()}',
-                    icon: Icons.timelapse_rounded,
-                  ),
-                ),
-              ],
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final seconds = ((data[2] as int) / 1000).ceil();
+                final time = seconds < 60
+                    ? ('$seconds', '秒')
+                    : seconds < 3600
+                    ? (
+                        '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}',
+                        '分:秒',
+                      )
+                    : (
+                        '${seconds ~/ 3600}:${(seconds ~/ 60 % 60).toString().padLeft(2, '0')}',
+                        '小时:分',
+                      );
+                final values = [
+                  '$formal',
+                  formal == 0
+                      ? '—'
+                      : '${((overview['recalled'] as int) / formal * 100).round()}%',
+                  time.$1,
+                ];
+                const numberStyle = TextStyle(
+                  fontSize: 27,
+                  height: 1.2,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -1,
+                );
+                final painter = TextPainter(
+                  textDirection: Directionality.of(context),
+                  textScaler: MediaQuery.textScalerOf(context),
+                  maxLines: 1,
+                );
+                var widest = 0.0;
+                for (final value in values) {
+                  painter.text = TextSpan(
+                    text: value,
+                    style: DefaultTextStyle.of(context).style
+                        .merge(numberStyle),
+                  );
+                  painter.layout();
+                  widest = math.max(widest, painter.width);
+                }
+                painter.dispose();
+                final fontSize =
+                    27.0 *
+                    math.min(
+                      1.0,
+                      ((constraints.maxWidth - 20) / 3 - 32) / widest,
+                    );
+                return Row(
+                  children: [
+                    Expanded(
+                      child: _Metric(
+                        label: '今日首次回忆',
+                        value: values[0],
+                        fontSize: fontSize,
+                        icon: Icons.check_circle_outline,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _Metric(
+                        label: '认识与熟知',
+                        value: values[1],
+                        fontSize: fontSize,
+                        icon: Icons.psychology_outlined,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _Metric(
+                        label: '累计学习时间',
+                        value: values[2],
+                        fontSize: fontSize,
+                        unit: time.$2,
+                        icon: Icons.timelapse_rounded,
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
             const _SectionLabel('学习日历'),
-            _Panel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('过去 12 周', style: TextStyle(color: c.onSurfaceVariant)),
-                  const SizedBox(height: 18),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final map = {
-                        for (final row in activity)
-                          row['day'] as String:
-                              (row['formal'] as int) + (row['practice'] as int),
-                      };
-                      final now = DateTime.now();
-                      return Wrap(
-                        spacing: 5,
-                        runSpacing: 5,
-                        children: List.generate(84, (index) {
-                          final date = DateTime(
-                            now.year,
-                            now.month,
-                            now.day - (83 - index),
-                          );
-                          final count = map[dayKey(date)] ?? 0;
-                          return Tooltip(
-                            message: '${dayKey(date)} · $count 次回忆',
-                            child: Container(
-                              width: (constraints.maxWidth - 13 * 5) / 14,
-                              height: 18,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(5),
-                                color: count == 0
-                                    ? c.surfaceContainerHighest
-                                    : c.primary.withValues(
-                                        alpha:
-                                            (.25 +
-                                            math.min(count, 20) / 20 * .75),
-                                      ),
-                              ),
-                            ),
-                          );
-                        }),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 16,
-                    runSpacing: 8,
-                    children: [
-                      Text(
-                        '${activity.length} 个学习日',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: c.onSurfaceVariant,
-                        ),
-                      ),
-                      Text(
-                        '浅 → 深  ·  回忆次数增加',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: c.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            _StudyCalendar(activity: activity),
             const _SectionLabel('最近学习'),
             if (activity.isEmpty)
               const _Empty(
@@ -694,7 +964,7 @@ class _StatsPage extends StatelessWidget {
                           contentPadding: EdgeInsets.zero,
                           title: Text(row['day']),
                           subtitle: Text(
-                            '首次 ${row['formal']} 次 · 重学 ${row['practice']} 次',
+                            '首次 ${row['formal']} 次 · 重学 ${row['practice']} 次${(row['independent'] as int? ?? 0) > 0 ? ' · 专项 ${row['independent']} 次' : ''}',
                           ),
                           trailing: Text(
                             '${((row['elapsed'] as int) / 60000).ceil()} 分钟',

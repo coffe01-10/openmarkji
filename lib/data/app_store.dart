@@ -19,6 +19,7 @@ typedef CardSearchHit = ({StudyCard card, List<String> deckNames});
 class AppStore extends ChangeNotifier {
   AppStore(this.db, {this.loadOfficialDecks = true});
   final AppDatabase db;
+  static const webDavSetting = 'webdavConnection';
 
   /// 测试可关闭，避免每次建库都读入整套官方词表。
   final bool loadOfficialDecks;
@@ -415,7 +416,11 @@ class AppStore extends ChangeNotifier {
     return next;
   });
 
-  Future<void> gradePractice(RecallGrade grade) async {
+  Future<void> gradePractice(
+    RecallGrade grade, {
+    int elapsedMs = 0,
+    DateTime? at,
+  }) async {
     await db.transaction(() async {
       final session = await practiceSession();
       if (session == null || session.queue.isEmpty) return;
@@ -437,6 +442,10 @@ class AppStore extends ChangeNotifier {
         'mistakes': {...session.mistakes, if (!recalled) id}.toList(),
       });
       await setSetting('practiceSession', jsonEncode(next.toJson()));
+      await db.customStatement(
+        'INSERT INTO practice_activity(id,studied_at,elapsed_ms) VALUES (?,?,?)',
+        [newId(), (at ?? DateTime.now()).millisecondsSinceEpoch, elapsedMs],
+      );
     });
     changed();
   }
@@ -850,15 +859,21 @@ class AppStore extends ChangeNotifier {
     final start = dayStart(now).millisecondsSinceEpoch,
         end = dayEnd(now).millisecondsSinceEpoch;
     final row = (await db.rows(
-      "SELECT count(*) attempts, coalesce(sum(kind='formal'),0) formal, coalesce(sum(kind='practice'),0) practice, coalesce(sum(elapsed_ms),0) elapsed, coalesce(sum(kind='formal' AND grade IN (1,4)),0) recalled FROM reviews WHERE reviewed_at>=? AND reviewed_at<?",
-      [start, end],
+      "SELECT count(*) attempts, coalesce(sum(kind='formal'),0) formal, coalesce(sum(kind='practice'),0) practice, coalesce(sum(elapsed_ms),0)+(SELECT coalesce(sum(elapsed_ms),0) FROM practice_activity WHERE studied_at>=? AND studied_at<?) elapsed, coalesce(sum(kind='formal' AND grade IN (1,4)),0) recalled FROM reviews WHERE reviewed_at>=? AND reviewed_at<?",
+      [start, end, start, end],
     )).first;
     return row;
   }
 
   Future<List<Map<String, dynamic>>> activity() => db.rows(
-    "SELECT strftime('%Y-%m-%d',reviewed_at/1000,'unixepoch','localtime') day, sum(kind='formal') formal, sum(kind='practice') practice, sum(elapsed_ms) elapsed FROM reviews GROUP BY day ORDER BY day DESC LIMIT 365",
+    "SELECT strftime('%Y-%m-%d',stamp/1000,'unixepoch','localtime') day, sum(formal) formal, sum(practice) practice, sum(independent) independent, sum(elapsed_ms) elapsed FROM (SELECT reviewed_at stamp,kind='formal' formal,kind='practice' practice,0 independent,elapsed_ms FROM reviews UNION ALL SELECT studied_at,0,0,1,elapsed_ms FROM practice_activity) GROUP BY day ORDER BY day DESC",
   );
+
+  Future<int> totalStudyTime() async =>
+      (await db.rows(
+            'SELECT (SELECT coalesce(sum(elapsed_ms),0) FROM reviews)+(SELECT coalesce(sum(elapsed_ms),0) FROM practice_activity) elapsed',
+          )).single['elapsed']
+          as int;
   Future<List<int>> forecast({DateTime? at}) async {
     final now = at ?? DateTime.now();
     final values = <int>[];
@@ -1002,10 +1017,24 @@ class AppStore extends ChangeNotifier {
       'createdAt': DateTime.now().toIso8601String(),
     };
     await db.transaction(() async {
-      for (final table in ['decks', 'cards', 'reviews', 'settings', 'media']) {
+      for (final table in [
+        'decks',
+        'cards',
+        'reviews',
+        'settings',
+        'media',
+        'practice_activity',
+        'card_decks',
+      ]) {
         var rows = await db.rows('SELECT * FROM $table');
-        if (table == 'settings' && !includeRecovery) {
-          rows = rows.where((r) => r['key'] != 'recoveryBackup').toList();
+        if (table == 'settings') {
+          rows = rows
+              .where(
+                (r) =>
+                    r['key'] != webDavSetting &&
+                    (includeRecovery || r['key'] != 'recoveryBackup'),
+              )
+              .toList();
         }
         contents[table] = rows
             .map(
@@ -1035,52 +1064,76 @@ class AppStore extends ChangeNotifier {
     }
     // Retain the old library inside the database; no external temporary extraction.
     final recovery = await backup();
+    final webDav = await setting(webDavSetting);
     await db.transaction(() async {
-      for (final table in ['decks', 'cards', 'reviews', 'settings', 'media']) {
-        await db.customStatement('DELETE FROM $table');
-        for (final raw in data[table] as List) {
-          final row = Map<String, dynamic>.from(raw);
-          final columns = switch (table) {
-            'decks' => ['id', 'payload'],
-            'cards' => [
-              'id',
-              'deck_id',
-              'source',
-              'search_text',
-              'chapter',
-              'tags',
-              'plan',
-              'due_at',
-              'enrolled_at',
-              'first_learned',
-              'payload',
-            ],
-            'reviews' => [
-              'id',
-              'card_id',
-              'deck_id',
-              'reviewed_at',
-              'grade',
-              'kind',
-              'elapsed_ms',
-              'payload',
-            ],
-            'media' => ['id', 'name', 'bytes'],
-            _ => ['key', 'value'],
-          };
-          if (table == 'media') row['bytes'] = base64Decode(row['bytes']);
-          await db.customStatement(
-            'INSERT INTO $table (${columns.join(',')}) VALUES (${List.filled(columns.length, '?').join(',')})',
-            columns.map((c) => row[c]).toList(),
-          );
-        }
+      for (final table in [
+        'decks',
+        'cards',
+        'reviews',
+        'settings',
+        'media',
+        'practice_activity',
+        'card_decks',
+      ]) {
+        await db.batch((batch) {
+          batch.customStatement('DELETE FROM $table');
+          for (final raw in data[table] as List? ?? const []) {
+            final row = Map<String, dynamic>.from(raw);
+            if (table == 'settings' && row['key'] == webDavSetting) continue;
+            final columns = switch (table) {
+              'decks' => ['id', 'payload'],
+              'cards' => [
+                'id',
+                'deck_id',
+                'source',
+                'search_text',
+                'chapter',
+                'tags',
+                'plan',
+                'due_at',
+                'enrolled_at',
+                'first_learned',
+                'payload',
+              ],
+              'reviews' => [
+                'id',
+                'card_id',
+                'deck_id',
+                'reviewed_at',
+                'grade',
+                'kind',
+                'elapsed_ms',
+                'payload',
+              ],
+              'media' => ['id', 'name', 'bytes'],
+              'practice_activity' => ['id', 'studied_at', 'elapsed_ms'],
+              'card_decks' => ['card_id', 'deck_id'],
+              _ => ['key', 'value'],
+            };
+            if (table == 'media') row['bytes'] = base64Decode(row['bytes']);
+            batch.customStatement(
+              'INSERT INTO $table (${columns.join(',')}) VALUES (${List.filled(columns.length, '?').join(',')})',
+              columns.map((c) => row[c]).toList(),
+            );
+          }
+        });
+      }
+      if (data['card_decks'] == null) {
+        await db.customStatement(
+          'INSERT INTO card_decks SELECT id,deck_id FROM cards',
+        );
+        await clearSetting('officialLibraryVersion');
       }
       await setSetting('recoveryBackup', base64Encode(recovery));
+      if (webDav != null) await setSetting(webDavSetting, webDav);
       await setSetting('migrated', '1');
     });
     preferences = Preferences.fromJson(
       decodeObject(await setting('preferences') ?? '{}'),
     );
+    if (data['card_decks'] == null && loadOfficialDecks) {
+      await _ensureOfficialDecks();
+    }
     changed();
   }
 

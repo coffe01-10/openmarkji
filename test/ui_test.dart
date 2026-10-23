@@ -476,6 +476,104 @@ void main() {
     await select('月');
     expect(tester.takeException(), isNull);
   });
+  testWidgets('今日与累计用时分开，长数值等高对齐，学习月历按星期排布并可翻月', (tester) async {
+    final semantics = tester.ensureSemantics();
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final now = DateTime.now();
+    for (final (id, date, elapsed) in [
+      ('today', now, 60000),
+      ('yesterday', now.subtract(const Duration(days: 1)), 200000000000),
+    ]) {
+      await store.db.customStatement(
+        'INSERT INTO practice_activity VALUES (?,?,?)',
+        [id, date.millisecondsSinceEpoch, elapsed],
+      );
+    }
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    expect(find.text('今日学习时间 · 1 分 0 秒'), findsOneWidget);
+    await tester.tap(find.text('统计').last);
+    await tester.pumpAndSettle();
+    final vertical = find
+        .byWidgetPredicate(
+          (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.text('累计学习时间'),
+      300,
+      scrollable: vertical,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('55555:34'), findsOneWidget);
+    final metrics = find.byWidgetPredicate(
+      (w) => w.runtimeType.toString() == '_Metric',
+    );
+    expect(metrics, findsNWidgets(3));
+    final numbers = ['0', '—', '55555:34']
+        .map(
+          (value) => find.descendant(of: metrics, matching: find.text(value)),
+        )
+        .toList();
+    final fontSize = tester.widget<Text>(numbers.first).style!.fontSize;
+    for (final number in numbers) {
+      expect(tester.widget<Text>(number).style!.fontSize, fontSize);
+      expect(
+        find.ancestor(of: number, matching: find.byType(FittedBox)),
+        findsNothing,
+      );
+    }
+    final first = tester.getRect(metrics.first);
+    for (var i = 1; i < 3; i++) {
+      expect(tester.getRect(metrics.at(i)).top, first.top);
+      expect(tester.getSize(metrics.at(i)).height, first.height);
+    }
+    await tester.scrollUntilVisible(
+      find.byTooltip('下个月'),
+      200,
+      scrollable: vertical,
+    );
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView).first, const Offset(0, 160));
+    await tester.pumpAndSettle();
+    final calendar = find.byWidgetPredicate(
+      (w) => w.runtimeType.toString() == '_StudyCalendar',
+    );
+    Finder date(DateTime d) => find.descendant(
+      of: calendar,
+      matching: find.bySemanticsLabel(RegExp('^${dayKey(d)}，')),
+    );
+    final firstDay = DateTime(now.year, now.month);
+    final firstCell = date(firstDay);
+    final weekday = find.descendant(
+      of: calendar,
+      matching: find.text(
+        ['一', '二', '三', '四', '五', '六', '日'][firstDay.weekday - 1],
+      ),
+    );
+    expect(
+      tester.getCenter(firstCell).dx,
+      closeTo(tester.getCenter(weekday).dx, .1),
+    );
+    final calendarSize = tester.getSize(calendar);
+    await tester.tap(find.byTooltip('下个月'));
+    await tester.pumpAndSettle();
+    final nextMonth = DateTime(now.year, now.month + 1);
+    expect(find.text('${nextMonth.year}年${nextMonth.month}月'), findsOneWidget);
+    expect(tester.getSize(calendar), calendarSize);
+    expect(find.text('回到本月'), findsNothing);
+    await tester.tap(date(nextMonth));
+    await tester.pumpAndSettle();
+    expect(find.text('${nextMonth.month}月1日 · 0 次回忆 · 0 秒'), findsOneWidget);
+    semantics.dispose();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('状态栏区域延续页面背景，标题避让安全区，浅深色和二级页系统栏同步', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -1643,6 +1741,13 @@ void main() {
     await tester.tap(find.text('资料与备份'));
     await tester.pumpAndSettle();
     expect(find.text('导出完整备份'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'WebDAV 地址'), findsNothing);
+    await tester.tap(find.text('WebDAV 备份'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextField, 'WebDAV 地址'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(TextField, 'WebDAV 地址'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -1681,6 +1786,53 @@ void main() {
     await tester.tap(find.text('外观与阅读'));
     await tester.pumpAndSettle();
     expect(find.text('主题模式'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('牌组展开途中详情停在快照，结束后恢复实时页面', (tester) async {
+    tester.view.physicalSize = const Size(390, 668);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await store.addExamples();
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('牌组').last);
+    await tester.pumpAndSettle();
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('记忆的起点')),
+    );
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+
+    final transition = find.byWidgetPredicate(
+      (widget) => widget.runtimeType.toString() == '_RowExpandTransition',
+    );
+    final snapshot = find.descendant(
+      of: transition,
+      matching: find.byType(SnapshotWidget),
+    );
+    expect(snapshot, findsOneWidget);
+    expect(
+      tester.widget<SnapshotWidget>(snapshot).controller.allowSnapshotting,
+      isTrue,
+    );
+    final during = tester.renderObject(find.byType(SnapshotWidget));
+    final picture = during.toString();
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(during.toString(), picture);
+
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<SnapshotWidget>(snapshot).controller.allowSnapshotting,
+      isFalse,
+    );
+    expect(find.text('写卡片').hitTestable(), findsOneWidget);
+    await tester.tap(find.text('写卡片'));
+    await tester.pumpAndSettle();
+    expect(find.text('写卡片'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
