@@ -36,6 +36,33 @@ void main() {
     ),
   );
 
+  test('加入计划、编辑和评分保留卡片顺序，分页不跳卡', () async {
+    for (final id in ['a', 'b', 'c', 'd']) {
+      await add(id, plan: 'library');
+    }
+    await store.bulkUpdate(['a', 'b'], {'plan': 'active'});
+    expect((await store.cards(deckId: 'd', limit: 2)).map((c) => c.id), [
+      'a',
+      'b',
+    ]);
+    expect((await store.cards(deckId: 'd', offset: 2)).map((c) => c.id), [
+      'c',
+      'd',
+    ]);
+    await store.putCard(
+      (await store.card('b'))!.withValues({'source': '编辑后的内容\n---\n答案'}),
+    );
+    await store.prepareSession(at: now);
+    await store.grade(RecallGrade.know, elapsedMs: 1000, at: now);
+    expect((await store.cards(deckId: 'd')).map((c) => c.id), [
+      'a',
+      'b',
+      'c',
+      'd',
+    ]);
+    expect((await store.card('b'))!.source, contains('编辑后的内容'));
+  });
+
   test('牌组顺序落库，旧数据保留原顺序，备份恢复和重新初始化不丢失', () async {
     for (final id in ['a', 'b']) {
       await store.putDeck(DeckData.fromJson({'id': id, 'name': id}));

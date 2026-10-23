@@ -480,6 +480,7 @@ class _DeckPageState extends State<_DeckPage> {
   final _scroll = ScrollController();
   final _listKey = GlobalKey();
   Timer? _selectionTimer;
+  int? _selectionPointer;
   int? _selectionAnchor;
   int? _selectionEnd;
   Offset? _selectionPosition;
@@ -489,6 +490,8 @@ class _DeckPageState extends State<_DeckPage> {
   DeckData? _deck;
   List<String> _tags = [];
   bool _loading = false, _more = true;
+  bool _enrolling = false;
+  Future<void>? _refreshing;
   int _generation = 0;
   @override
   void initState() {
@@ -511,15 +514,14 @@ class _DeckPageState extends State<_DeckPage> {
   void _refresh() {
     _endSelection();
     _generation++;
-    _cards = [];
-    _more = true;
     _loading = false;
-    _loadMore();
+    _refreshing = _loadMore(replace: true);
   }
 
-  Future<void> _loadMore() async {
-    if (_loading || !_more) return;
+  Future<void> _loadMore({bool replace = false}) async {
+    if (_loading || (!replace && !_more)) return;
     final gen = _generation;
+    final limit = replace ? math.max(60, _cards.length) : 60;
     _loading = true;
     try {
       final values = await widget.store.cards(
@@ -529,14 +531,15 @@ class _DeckPageState extends State<_DeckPage> {
         plan: _plan,
         tag: _tag,
         focus: _focus,
-        offset: _cards.length,
+        offset: replace ? 0 : _cards.length,
+        limit: limit,
       );
       final deck = await widget.store.deck(widget.deckId);
       final tags = await widget.store.tags(widget.deckId);
       if (mounted && gen == _generation) {
         setState(() {
-          _cards.addAll(values);
-          _more = values.length == 60;
+          _cards = replace ? values : [..._cards, ...values];
+          _more = values.length == limit;
           _deck = deck;
           _tags = tags;
           _loading = false;
@@ -551,7 +554,11 @@ class _DeckPageState extends State<_DeckPage> {
   }
 
   void _filter(VoidCallback update) {
-    setState(update);
+    if (_enrolling) return;
+    setState(() {
+      update();
+      _cards = [];
+    });
     _refresh();
   }
 
@@ -559,6 +566,7 @@ class _DeckPageState extends State<_DeckPage> {
       math.max(56, MediaQuery.textScalerOf(context).scale(14) * 1.4 + 20);
 
   void _beginSelection(int index, Offset position) {
+    _selectionTimer?.cancel();
     _selectionAnchor = index;
     _selectionEnd = null;
     _selectionPosition = position;
@@ -619,7 +627,9 @@ class _DeckPageState extends State<_DeckPage> {
   void _endSelection() {
     _selectionTimer?.cancel();
     _selectionTimer = null;
+    _selectionPointer = null;
     _selectionAnchor = null;
+    _selectionEnd = null;
     _selectionPosition = null;
     _selectionBefore = {};
   }
@@ -681,6 +691,23 @@ class _DeckPageState extends State<_DeckPage> {
         _toast(context, '已更新 ${ids.length} 张卡片');
       }
     });
+  }
+
+  Future<bool> _enroll() async {
+    _endSelection();
+    final ids = _selected.toList();
+    setState(() {
+      _enrolling = true;
+    });
+    try {
+      await widget.store.bulkUpdate(ids, {'plan': 'active'});
+      await _refreshing;
+      if (!mounted) return false;
+      return true;
+    } catch (e) {
+      if (mounted) _toast(context, '$e');
+      return false;
+    }
   }
 
   @override
@@ -924,93 +951,128 @@ class _DeckPageState extends State<_DeckPage> {
                             : '新建或导入卡片后，勾选卡片即可加入学习计划。',
                       ),
                     )
-                  : ListView.builder(
-                      key: _listKey,
-                      controller: _scroll,
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                      itemExtent: _rowExtent,
-                      itemCount: _cards.length + (_more ? 1 : 0),
-                      itemBuilder: (context, i) {
-                        if (i == _cards.length) {
-                          return const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: Center(
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          );
-                        }
-                        final card = _cards[i];
-                        return Card(
-                          key: ValueKey(card.id),
-                          margin: const EdgeInsets.symmetric(vertical: 3),
-                          clipBehavior: Clip.antiAlias,
-                          shape: const RoundedSuperellipseBorder(
-                            borderRadius: BorderRadius.all(Radius.circular(16)),
-                          ),
-                          color: _selected.contains(card.id)
-                              ? c.secondaryContainer
-                              : c.surfaceContainerLow,
-                          child: InkWell(
-                            onTap: () => _push(
-                              context,
-                              _CardPage(store: widget.store, cardId: card.id),
-                            ),
-                            onLongPress: () =>
-                                setState(() => _selected.add(card.id)),
-                            child: Row(
-                              children: [
-                                GestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  onVerticalDragStart: (event) =>
-                                      _beginSelection(i, event.globalPosition),
-                                  onVerticalDragUpdate: (event) {
-                                    _selectionPosition = event.globalPosition;
-                                    _paintSelection();
-                                  },
-                                  onVerticalDragEnd: (_) => _endSelection(),
-                                  onVerticalDragCancel: _endSelection,
-                                  child: SizedBox(
-                                    width: 44,
-                                    height: double.infinity,
-                                    child: Checkbox(
-                                      value: _selected.contains(card.id),
-                                      onChanged: (checked) => setState(() {
-                                        checked!
-                                            ? _selected.add(card.id)
-                                            : _selected.remove(card.id);
-                                      }),
-                                    ),
+                  : IgnorePointer(
+                      ignoring: _enrolling,
+                      child: Listener(
+                        // 起始行会被懒加载列表回收，拖选的移动和松手由稳定的外层接收。
+                        onPointerMove: (event) {
+                          if (event.pointer != _selectionPointer ||
+                              _selectionAnchor == null) {
+                            return;
+                          }
+                          _selectionPosition = event.position;
+                          _paintSelection();
+                        },
+                        onPointerUp: (event) {
+                          if (event.pointer == _selectionPointer) {
+                            _endSelection();
+                          }
+                        },
+                        onPointerCancel: (event) {
+                          if (event.pointer == _selectionPointer) {
+                            _endSelection();
+                          }
+                        },
+                        child: ListView.builder(
+                          key: _listKey,
+                          controller: _scroll,
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                          itemExtent: _rowExtent,
+                          itemCount: _cards.length + (_more ? 1 : 0),
+                          itemBuilder: (context, i) {
+                            if (i == _cards.length) {
+                              return const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
                                   ),
                                 ),
-                                Expanded(
-                                  child: Tooltip(
-                                    message:
-                                        '${card.chapter.isEmpty ? '未分类' : card.chapter} · ${switch (card.plan) {
-                                          'active' => card.isNew ? '等待新学' : '计划内',
-                                          'paused' => '已暂停',
-                                          _ => '未加入计划',
-                                        }}${card.tags.isEmpty ? '' : ' · ${card.tags.join(' / ')}'}',
-                                    child: Text(
-                                      _short(card.source, 140),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        height: 1.4,
+                              );
+                            }
+                            final card = _cards[i];
+                            return Card(
+                              key: ValueKey(card.id),
+                              margin: const EdgeInsets.symmetric(vertical: 3),
+                              clipBehavior: Clip.antiAlias,
+                              shape: const RoundedSuperellipseBorder(
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(16),
+                                ),
+                              ),
+                              color: _selected.contains(card.id)
+                                  ? c.secondaryContainer
+                                  : c.surfaceContainerLow,
+                              child: InkWell(
+                                onTap: () => _push(
+                                  context,
+                                  _CardPage(
+                                    store: widget.store,
+                                    cardId: card.id,
+                                  ),
+                                ),
+                                onLongPress: () =>
+                                    setState(() => _selected.add(card.id)),
+                                child: Row(
+                                  children: [
+                                    Listener(
+                                      onPointerDown: (event) {
+                                        _selectionPointer ??= event.pointer;
+                                      },
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
+                                        onVerticalDragStart: (event) =>
+                                            _beginSelection(
+                                              i,
+                                              event.globalPosition,
+                                            ),
+                                        child: SizedBox(
+                                          width: 44,
+                                          height: double.infinity,
+                                          child: Checkbox(
+                                            value: _selected.contains(card.id),
+                                            onChanged: (checked) => setState(
+                                              () {
+                                                checked!
+                                                    ? _selected.add(card.id)
+                                                    : _selected.remove(card.id);
+                                              },
+                                            ),
+                                          ),
+                                        ),
                                       ),
                                     ),
-                                  ),
+                                    Expanded(
+                                      child: Tooltip(
+                                        message:
+                                            '${card.chapter.isEmpty ? '未分类' : card.chapter} · ${switch (card.plan) {
+                                              'active' => card.isNew ? '等待新学' : '计划内',
+                                              'paused' => '已暂停',
+                                              _ => '未加入计划',
+                                            }}${card.tags.isEmpty ? '' : ' · ${card.tags.join(' / ')}'}',
+                                        child: Text(
+                                          _short(card.source, 140),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            height: 1.4,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    _FavoriteButton(
+                                      store: widget.store,
+                                      card: card,
+                                    ),
+                                    const SizedBox(width: 4),
+                                  ],
                                 ),
-                                _FavoriteButton(
-                                  store: widget.store,
-                                  card: card,
-                                ),
-                                const SizedBox(width: 4),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
+                              ),
+                            );
+                          },
+                        ),
+                      ),
                     ),
             ),
             SafeArea(
@@ -1021,37 +1083,57 @@ class _DeckPageState extends State<_DeckPage> {
                   vertical: 4,
                 ),
                 child: SizedBox(
-                  height: 48,
+                  height: math.max(
+                    48,
+                    MediaQuery.textScalerOf(context).scale(14) * 1.5 + 20,
+                  ),
                   child: _selected.isNotEmpty
                       ? Row(
                           children: [
-                            TextButton(
-                              onPressed: () =>
-                                  setState(() => _selected.clear()),
-                              child: Text('取消 ${_selected.length}'),
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: IgnorePointer(
+                                  ignoring: _enrolling,
+                                  child: _GlassChoice(
+                                    label: '取消 ${_selected.length}',
+                                    onPressed: () {
+                                      _endSelection();
+                                      setState(() => _selected.clear());
+                                    },
+                                  ),
+                                ),
+                              ),
                             ),
-                            const Spacer(),
-                            TextButton(
-                              onPressed: () => _batch('active'),
-                              child: const Text('加入计划'),
+                            _GlassProgressButton(
+                              label: '加入计划',
+                              onPressed: _enroll,
+                              onComplete: () => setState(() {
+                                _enrolling = false;
+                              }),
                             ),
-                            _ActionMenu<String>(
-                              destructive: const {'delete'},
-                              onSelected: _batch,
-                              options: {
-                                'paused': '暂停学习',
-                                'library': '移出计划',
-                                'move': '移动到牌组',
-                                'chapter': '移动到章节',
-                                if (!isOfficialContentDeck(widget.deckId))
-                                  'delete': '删除所选',
-                              },
+                            const SizedBox(width: 8),
+                            IgnorePointer(
+                              ignoring: _enrolling,
+                              child: _ActionMenu<String>(
+                                destructive: const {'delete'},
+                                onSelected: _batch,
+                                options: {
+                                  'paused': '暂停学习',
+                                  'library': '移出计划',
+                                  'move': '移动到牌组',
+                                  'chapter': '移动到章节',
+                                  if (!isOfficialContentDeck(widget.deckId))
+                                    'delete': '删除所选',
+                                },
+                              ),
                             ),
                           ],
                         )
                       : Row(
                           children: [
-                            TextButton(
+                            _GlassChoice(
+                              label: '全选筛选结果',
                               onPressed: () => _action(context, () async {
                                 final rows = await widget.store.cards(
                                   deckId: widget.deckId,
@@ -1069,7 +1151,6 @@ class _DeckPageState extends State<_DeckPage> {
                                   );
                                 }
                               }),
-                              child: const Text('全选筛选结果'),
                             ),
                             const Spacer(),
                             Text(

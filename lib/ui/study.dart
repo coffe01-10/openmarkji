@@ -18,6 +18,7 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
   StudyCard? _card;
   DeckData? _deck;
   bool _revealed = false, _busy = true, _undoAvailable = false;
+  int _turn = 0;
   final _watch = Stopwatch();
   @override
   void initState() {
@@ -59,6 +60,7 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
           _revealed = false;
           _busy = false;
           _undoAvailable = undo;
+          _turn++;
         });
         _watch.reset();
         _watch.start();
@@ -162,283 +164,300 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
                               child: const Text('重新加载任务'),
                             ),
                     )
-                  : Column(
-                      children: [
-                        if (widget.store.preferences.showStudyProgress)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
-                            child: Column(
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        '${_deck?.name ?? ''}${card.chapter.isEmpty ? '' : ' / ${card.chapter}'}',
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: c.onSurfaceVariant,
-                                        ),
-                                      ),
-                                    ),
-                                    Text(
-                                      '已完成 ${session.completed} · 剩余 ${session.queue.length}',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: c.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 14),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: LinearProgressIndicator(
-                                    value:
-                                        session.completed /
-                                        math.max(
-                                          1,
-                                          session.completed +
-                                              session.queue.length,
-                                        ),
-                                    minHeight: 5,
-                                    backgroundColor: c.surfaceContainerHigh,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        Expanded(
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 8,
-                            ),
-                            child: AnimatedSwitcher(
-                              duration: _duration(context, 220),
-                              child: Container(
-                                key: ValueKey(card.id),
-                                width: double.infinity,
-                                constraints: const BoxConstraints(
-                                  minHeight: 300,
-                                ),
-                                padding: const EdgeInsets.all(26),
-                                decoration: BoxDecoration(
-                                  color: c.surfaceContainerLow,
-                                  borderRadius: BorderRadius.circular(30),
+                  : IgnorePointer(
+                      ignoring: _busy,
+                      child: AnimatedSwitcher(
+                        duration: _duration(context, 260),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        layoutBuilder: (current, previous) => Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            for (final child in previous)
+                              IgnorePointer(child: child),
+                            ?current,
+                          ],
+                        ),
+                        child: Column(
+                          key: ValueKey(_turn),
+                          children: [
+                            if (widget.store.preferences.showStudyProgress)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  24,
+                                  12,
+                                  24,
+                                  20,
                                 ),
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
                                       children: [
-                                        _Pill(
-                                          stage == 'new'
-                                              ? '新卡片'
-                                              : stage == 'relearn'
-                                              ? '当日重学'
-                                              : '到期复习',
-                                          icon: stage == 'relearn'
-                                              ? Icons.refresh
-                                              : Icons.style_outlined,
+                                        Expanded(
+                                          child: Text(
+                                            '${_deck?.name ?? ''}${card.chapter.isEmpty ? '' : ' / ${card.chapter}'}',
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: c.onSurfaceVariant,
+                                            ),
+                                          ),
                                         ),
-                                        const Spacer(),
-                                        CommonPopupBox(
-                                          targetBuilder: (open) =>
-                                              ElasticButton(
-                                                child: IconButton(
-                                                  tooltip: '当前卡片操作',
-                                                  onPressed: _busy
-                                                      ? null
-                                                      : open,
-                                                  icon: const Icon(
-                                                    Icons.more_horiz,
-                                                  ),
-                                                ),
-                                              ),
-                                          popupBuilder: (_) => CommonPopupMenu(
-                                            items: [
-                                              CommonPopupMenuItem(
-                                                label: '暂停这张卡',
-                                                glyph:
-                                                    Icons.pause_circle_outline,
-                                                onPressed: () => _action(
-                                                  context,
-                                                  () async {
-                                                    setState(
-                                                      () => _busy = true,
-                                                    );
-                                                    try {
-                                                      await widget.store
-                                                          .bulkUpdate(
-                                                            [card.id],
-                                                            {'plan': 'paused'},
-                                                          );
-                                                      await _load();
-                                                      if (context.mounted) {
-                                                        _toast(
-                                                          context,
-                                                          '已暂停，可在牌组的“暂停”筛选中重新加入计划',
-                                                        );
-                                                      }
-                                                    } finally {
-                                                      if (mounted) {
-                                                        setState(
-                                                          () => _busy = false,
-                                                        );
-                                                      }
-                                                    }
-                                                  },
-                                                ),
-                                              ),
-                                            ],
+                                        Text(
+                                          '已完成 ${session.completed} · 剩余 ${session.queue.length}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: c.onSurfaceVariant,
                                           ),
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 24),
-                                    ContentView(
-                                      source: card.source,
-                                      store: widget.store,
-                                      revealed: _revealed,
-                                      interactive: true,
-                                    ),
-                                    const SizedBox(height: 24),
-                                    if (!_revealed &&
-                                        widget.store.preferences.showRecallHint)
-                                      Text(
-                                        '先在心里回忆一下答案',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: c.onSurfaceVariant,
-                                        ),
+                                    const SizedBox(height: 14),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: LinearProgressIndicator(
+                                        value:
+                                            session.completed /
+                                            math.max(
+                                              1,
+                                              session.completed +
+                                                  session.queue.length,
+                                            ),
+                                        minHeight: 5,
+                                        backgroundColor: c.surfaceContainerHigh,
                                       ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 8,
+                                ),
+                                child: Container(
+                                  width: double.infinity,
+                                  constraints: const BoxConstraints(
+                                    minHeight: 300,
+                                  ),
+                                  padding: const EdgeInsets.all(26),
+                                  decoration: BoxDecoration(
+                                    color: c.surfaceContainerLow,
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          _Pill(
+                                            stage == 'new'
+                                                ? '新卡片'
+                                                : stage == 'relearn'
+                                                ? '当日重学'
+                                                : '到期复习',
+                                            icon: stage == 'relearn'
+                                                ? Icons.refresh
+                                                : Icons.style_outlined,
+                                          ),
+                                          const Spacer(),
+                                          CommonPopupBox(
+                                            targetBuilder: (open) =>
+                                                ElasticButton(
+                                                  child: IconButton(
+                                                    tooltip: '当前卡片操作',
+                                                    onPressed: _busy
+                                                        ? null
+                                                        : open,
+                                                    icon: const Icon(
+                                                      Icons.more_horiz,
+                                                    ),
+                                                  ),
+                                                ),
+                                            popupBuilder: (_) => CommonPopupMenu(
+                                              items: [
+                                                CommonPopupMenuItem(
+                                                  label: '暂停这张卡',
+                                                  glyph: Icons
+                                                      .pause_circle_outline,
+                                                  onPressed: () => _action(
+                                                    context,
+                                                    () async {
+                                                      setState(
+                                                        () => _busy = true,
+                                                      );
+                                                      try {
+                                                        await widget.store
+                                                            .bulkUpdate(
+                                                              [card.id],
+                                                              {
+                                                                'plan':
+                                                                    'paused',
+                                                              },
+                                                            );
+                                                        await _load();
+                                                        if (context.mounted) {
+                                                          _toast(
+                                                            context,
+                                                            '已暂停，可在牌组的“暂停”筛选中重新加入计划',
+                                                          );
+                                                        }
+                                                      } finally {
+                                                        if (mounted) {
+                                                          setState(
+                                                            () => _busy = false,
+                                                          );
+                                                        }
+                                                      }
+                                                    },
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 24),
+                                      ContentView(
+                                        source: card.source,
+                                        store: widget.store,
+                                        revealed: _revealed,
+                                        interactive: true,
+                                      ),
+                                      const SizedBox(height: 24),
+                                      if (!_revealed &&
+                                          widget
+                                              .store
+                                              .preferences
+                                              .showRecallHint)
+                                        Text(
+                                          '先在心里回忆一下答案',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: c.onSurfaceVariant,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                24,
+                                20,
+                                24,
+                                20,
+                              ),
+                              child: _StudyActionSwitcher(
+                                revealed: _revealed,
+                                reveal: SizedBox(
+                                  width: double.infinity,
+                                  child: FilledButton.icon(
+                                    onPressed: () {
+                                      if (widget
+                                          .store
+                                          .preferences
+                                          .studyHaptics) {
+                                        HapticFeedback.lightImpact();
+                                      }
+                                      setState(() => _revealed = true);
+                                    },
+                                    icon: const Icon(Icons.visibility_outlined),
+                                    label: const Text('揭晓答案'),
+                                  ),
+                                ),
+                                rating: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      stage == 'relearn'
+                                          ? '这次练习不会改变长期排期'
+                                          : '刚才，你记得怎么样？',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: c.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        final buttons = _recallChoices.map((g) {
+                                          final colors = switch (g) {
+                                            RecallGrade.forgot => (
+                                              c.errorContainer,
+                                              c.onErrorContainer,
+                                            ),
+                                            RecallGrade.vague => (
+                                              c.tertiaryContainer,
+                                              c.onTertiaryContainer,
+                                            ),
+                                            RecallGrade.know => (
+                                              c.primaryContainer,
+                                              c.onPrimaryContainer,
+                                            ),
+                                            RecallGrade.familiar => (
+                                              c.secondaryContainer,
+                                              c.onSecondaryContainer,
+                                            ),
+                                          };
+                                          return FilledButton(
+                                            style: FilledButton.styleFrom(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 8,
+                                                    vertical: 14,
+                                                  ),
+                                              backgroundColor: colors.$1,
+                                              foregroundColor: colors.$2,
+                                            ),
+                                            onPressed: () => _grade(g),
+                                            child: Column(
+                                              children: [
+                                                Text(
+                                                  g.label,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  g == RecallGrade.forgot ||
+                                                          g == RecallGrade.vague
+                                                      ? '稍后再来'
+                                                      : '完成这张',
+                                                  style: const TextStyle(
+                                                    fontSize: 10,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }).toList();
+                                        return Row(
+                                          children: [
+                                            for (
+                                              var i = 0;
+                                              i < buttons.length;
+                                              i++
+                                            ) ...[
+                                              if (i > 0)
+                                                const SizedBox(width: 8),
+                                              Expanded(child: buttons[i]),
+                                            ],
+                                          ],
+                                        );
+                                      },
+                                    ),
                                   ],
                                 ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
-                          child: AnimatedSwitcher(
-                            duration: _duration(context, 180),
-                            child: !_revealed
-                                ? SizedBox(
-                                    key: const ValueKey('reveal'),
-                                    width: double.infinity,
-                                    child: FilledButton.icon(
-                                      onPressed: _busy
-                                          ? null
-                                          : () {
-                                              if (widget
-                                                  .store
-                                                  .preferences
-                                                  .studyHaptics) {
-                                                HapticFeedback.lightImpact();
-                                              }
-                                              setState(() => _revealed = true);
-                                            },
-                                      icon: const Icon(
-                                        Icons.visibility_outlined,
-                                      ),
-                                      label: const Text('揭晓答案'),
-                                    ),
-                                  )
-                                : Column(
-                                    key: const ValueKey('rating'),
-                                    children: [
-                                      Text(
-                                        stage == 'relearn'
-                                            ? '这次练习不会改变长期排期'
-                                            : '刚才，你记得怎么样？',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: c.onSurfaceVariant,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      LayoutBuilder(
-                                        builder: (context, constraints) {
-                                          final buttons = _recallChoices.map((
-                                            g,
-                                          ) {
-                                            final colors = switch (g) {
-                                              RecallGrade.forgot => (
-                                                c.errorContainer,
-                                                c.onErrorContainer,
-                                              ),
-                                              RecallGrade.vague => (
-                                                c.tertiaryContainer,
-                                                c.onTertiaryContainer,
-                                              ),
-                                              RecallGrade.know => (
-                                                c.primaryContainer,
-                                                c.onPrimaryContainer,
-                                              ),
-                                              RecallGrade.familiar => (
-                                                c.secondaryContainer,
-                                                c.onSecondaryContainer,
-                                              ),
-                                            };
-                                            return FilledButton(
-                                              style: FilledButton.styleFrom(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 14,
-                                                    ),
-                                                backgroundColor: colors.$1,
-                                                foregroundColor: colors.$2,
-                                              ),
-                                              onPressed: _busy
-                                                  ? null
-                                                  : () => _grade(g),
-                                              child: Column(
-                                                children: [
-                                                  Text(
-                                                    g.label,
-                                                    style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Text(
-                                                    g == RecallGrade.forgot ||
-                                                            g ==
-                                                                RecallGrade
-                                                                    .vague
-                                                        ? '稍后再来'
-                                                        : '完成这张',
-                                                    style: const TextStyle(
-                                                      fontSize: 10,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          }).toList();
-                                          return Row(
-                                            children: [
-                                              for (
-                                                var i = 0;
-                                                i < buttons.length;
-                                                i++
-                                              ) ...[
-                                                if (i > 0)
-                                                  const SizedBox(width: 8),
-                                                Expanded(child: buttons[i]),
-                                              ],
-                                            ],
-                                          );
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
             ),
           ),
@@ -516,6 +535,39 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
           ],
         ),
       );
+}
+
+/// 两种操作始终共用同一高度和底部基线，切换时不会先缩短再跳回。
+class _StudyActionSwitcher extends StatelessWidget {
+  const _StudyActionSwitcher({
+    required this.revealed,
+    required this.reveal,
+    required this.rating,
+  });
+  final bool revealed;
+  final Widget reveal, rating;
+  @override
+  Widget build(BuildContext context) => Stack(
+    key: const ValueKey('study-actions'),
+    alignment: Alignment.bottomCenter,
+    children: [
+      for (final (visible, child) in [(!revealed, reveal), (revealed, rating)])
+        IgnorePointer(
+          ignoring: !visible,
+          child: ExcludeSemantics(
+            excluding: !visible,
+            child: ExcludeFocus(
+              excluding: !visible,
+              child: AnimatedOpacity(
+                duration: _duration(context, 180),
+                opacity: visible ? 1 : 0,
+                child: child,
+              ),
+            ),
+          ),
+        ),
+    ],
+  );
 }
 
 class _CardPage extends StatelessWidget {

@@ -239,7 +239,14 @@ class AppStore extends ChangeNotifier {
     String? plainText,
   }) async {
     await db.customStatement(
-      'INSERT OR REPLACE INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      // 保留 rowid，加入计划、评分和编辑都不应把卡片挪到列表末尾。
+      'INSERT INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?) '
+      'ON CONFLICT(id) DO UPDATE SET '
+      'deck_id=excluded.deck_id,source=excluded.source,'
+      'search_text=excluded.search_text,chapter=excluded.chapter,'
+      'tags=excluded.tags,plan=excluded.plan,due_at=excluded.due_at,'
+      'enrolled_at=excluded.enrolled_at,first_learned=excluded.first_learned,'
+      'payload=excluded.payload',
       [
         card.id,
         card.deckId,

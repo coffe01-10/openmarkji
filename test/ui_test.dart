@@ -8,6 +8,7 @@ import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:openmarkji/algorithms/mmx.dart';
 import 'package:openmarkji/data/app_updates.dart';
 import 'package:openmarkji/data/app_store.dart';
 import 'package:openmarkji/data/database.dart';
@@ -22,7 +23,9 @@ import 'package:openmarkji/ui/glass/popup.dart';
 class _InteractionStore extends AppStore {
   _InteractionStore(super.db) : super(loadOfficialDecks: false);
   int countQueries = 0, sessionQueries = 0;
-  Completer<void>? countGate, reorderGate;
+  Completer<void>? countGate, reorderGate, bulkGate, cardsGate, gradeGate;
+  int bulkCalls = 0, gradeCalls = 0;
+  bool failBulk = false;
   final reorderGates = <Completer<void>>[];
   @override
   Future<Map<String, int>> counts(String deckId) async {
@@ -42,6 +45,54 @@ class _InteractionStore extends AppStore {
   Future<PracticeSession?> practiceSession() {
     sessionQueries++;
     return super.practiceSession();
+  }
+
+  @override
+  Future<void> bulkUpdate(
+    Iterable<String> ids,
+    Map<String, dynamic> values,
+  ) async {
+    bulkCalls++;
+    await bulkGate?.future;
+    if (failBulk) throw StateError('模拟写入失败');
+    await super.bulkUpdate(ids, values);
+  }
+
+  @override
+  Future<List<StudyCard>> cards({
+    required String deckId,
+    String search = '',
+    String? chapter,
+    String? plan,
+    String? tag,
+    String? focus,
+    bool randomOrder = false,
+    int offset = 0,
+    int limit = 60,
+  }) async {
+    await cardsGate?.future;
+    return super.cards(
+      deckId: deckId,
+      search: search,
+      chapter: chapter,
+      plan: plan,
+      tag: tag,
+      focus: focus,
+      randomOrder: randomOrder,
+      offset: offset,
+      limit: limit,
+    );
+  }
+
+  @override
+  Future<void> grade(
+    RecallGrade grade, {
+    required int elapsedMs,
+    DateTime? at,
+  }) async {
+    gradeCalls++;
+    await gradeGate?.future;
+    await super.grade(grade, elapsedMs: elapsedMs, at: at);
   }
 }
 
@@ -730,7 +781,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     await store.putDeck(DeckData(id: 'drag', name: '拖选测试'));
-    for (var i = 0; i < 24; i++) {
+    for (var i = 0; i < 180; i++) {
       await store.putCard(
         StudyCard(
           id: 'drag-$i',
@@ -781,17 +832,273 @@ void main() {
     final controller = tester.widget<ListView>(list).controller!;
     final brush = await tester.startGesture(first);
     await brush.moveTo(Offset(first.dx, tester.getRect(list).bottom - 4));
-    await tester.pump(const Duration(milliseconds: 700));
-    expect(controller.offset, greaterThan(100));
+    for (var i = 0; i < 400; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(controller.offset, greaterThan(60 * 56));
+    expect(
+      find.byKey(const ValueKey('drag-0')),
+      findsNothing,
+      reason: '持续拖选跨过分页并回收起始行后，仍必须接收松手',
+    );
     final count = int.parse(
       tester.widget<Text>(find.textContaining('取消 ')).data!.split(' ').last,
     );
     expect(count, greaterThan(5));
     await brush.up();
-    await tester.pumpAndSettle();
     final stopped = controller.offset;
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(seconds: 1));
     expect(controller.offset, stopped);
+    expect(find.text('取消 $count'), findsOneWidget);
+    await tester.tap(find.text('取消 $count'));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('全选筛选结果'), findsOneWidget);
+    expect(controller.offset, stopped);
+
+    // 系统取消触摸，以及第二根手指点击取消，都要立即结束自动滚动。
+    for (final cancelPointer in [true, false]) {
+      final next = await tester.startGesture(
+        tester.getCenter(find.byType(Checkbox).first),
+      );
+      await next.moveTo(Offset(first.dx, tester.getRect(list).bottom - 4));
+      await tester.pump(const Duration(milliseconds: 200));
+      if (cancelPointer) {
+        await next.cancel();
+      } else {
+        await tester.tap(find.textContaining('取消 '), pointer: 2);
+      }
+      final offset = controller.offset;
+      await tester.pump(const Duration(seconds: 1));
+      expect(controller.offset, offset);
+      if (cancelPointer) {
+        await tester.tap(find.textContaining('取消 '));
+      } else {
+        await next.moveBy(const Offset(0, -20));
+        await next.up();
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('全选筛选结果'), findsOneWidget);
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('系统返回先退出子页面，其他主导航页先返回今日，今日才退出应用', (tester) async {
+    tester.view.physicalSize = const Size(390, 668);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var exits = 0;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'SystemNavigator.pop') exits++;
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await store.putDeck(DeckData(id: 'back', name: '返回测试'));
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    for (final tab in ['牌组', '统计', '设置']) {
+      await tester.tap(find.text(tab).last);
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<NavigationDock>(find.byType(NavigationDock))
+            .selectedIndex,
+        0,
+      );
+      expect(exits, 0);
+    }
+    await tester.tap(find.text('牌组').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('返回测试'));
+    await tester.pumpAndSettle();
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<NavigationDock>(find.byType(NavigationDock)).selectedIndex,
+      1,
+    );
+    expect(exits, 0);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<NavigationDock>(find.byType(NavigationDock)).selectedIndex,
+      0,
+    );
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(exits, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('加入计划在玻璃按钮内收缩加载、打勾再展开，刷新不清空列表，失败保留选择', (tester) async {
+    tester.view.physicalSize = const Size(390, 668);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final observed = await observedStore();
+    await store.putDeck(DeckData(id: 'enroll', name: '加入测试'));
+    await store.putCard(
+      StudyCard(id: 'enroll-1', deckId: 'enroll', source: '待加入卡片\n---\n答案'),
+    );
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('牌组').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('加入测试'));
+    await tester.pumpAndSettle();
+    expect(
+      find.ancestor(
+        of: find.text('全选筛选结果'),
+        matching: find.byType(LiquidGlass),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('全选筛选结果'));
+    await tester.pumpAndSettle();
+    expect(
+      find.ancestor(of: find.text('取消 1'), matching: find.byType(LiquidGlass)),
+      findsOneWidget,
+    );
+    final progress = find.byKey(const ValueKey('enroll-progress'));
+    final original = tester.getRect(progress);
+    final cardRect = tester.getRect(find.byKey(const ValueKey('enroll-1')));
+    observed.bulkGate = Completer<void>();
+    observed.cardsGate = Completer<void>();
+    addTearDown(() {
+      if (!observed.bulkGate!.isCompleted) observed.bulkGate!.complete();
+      if (!observed.cardsGate!.isCompleted) observed.cardsGate!.complete();
+    });
+    await tester.tap(find.text('加入计划'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 130));
+    expect(
+      tester.getRect(progress).width,
+      inExclusiveRange(44, original.width),
+    );
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(tester.getSize(progress), const Size(44, 44));
+    expect(tester.getRect(find.byKey(const ValueKey('enroll-1'))), cardRect);
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.byType(CircularProgressIndicator),
+        matching: progress,
+      ),
+      findsOneWidget,
+    );
+    await tester.tapAt(original.center);
+    await tester.pump();
+    expect(observed.bulkCalls, 1);
+    observed.bulkGate!.complete();
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.getRect(find.byKey(const ValueKey('enroll-1'))), cardRect);
+      expect(find.byKey(const ValueKey('enroll-success')), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    }
+    observed.cardsGate!.complete();
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(find.byKey(const ValueKey('enroll-success')), findsOneWidget);
+    expect(tester.getSize(progress), const Size(44, 44));
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 130));
+    expect(tester.getRect(progress).width, greaterThan(44));
+    await tester.pumpAndSettle();
+    expect(find.text('取消 1'), findsOneWidget);
+    expect((await store.card('enroll-1'))!.plan, 'active');
+    // 写入失败不能显示成功勾，必须保留所选卡片供重试。
+    observed.failBulk = true;
+    await tester.tap(find.text('加入计划'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('enroll-success')), findsNothing);
+    expect(find.text('取消 1'), findsOneWidget);
+    expect(find.text('加入计划'), findsOneWidget);
+    tester.view.physicalSize = const Size(320, 668);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('评分保存期间按钮不变灰，下一张卡片与底部操作同步过渡且揭晓区不跳动', (tester) async {
+    tester.view.physicalSize = const Size(390, 668);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final observed = await observedStore();
+    await store.addExamples();
+    final deck = (await store.decks()).single;
+    await store.bulkUpdate(
+      (await store.cards(deckId: deck.id)).map((c) => c.id),
+      {'plan': 'active'},
+    );
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始今日学习'));
+    await tester.pumpAndSettle();
+    final actions = find.byKey(const ValueKey('study-actions'));
+    final initial = tester.getRect(actions);
+    final first = tester.widget<ContentView>(find.byType(ContentView)).source;
+    await tester.tap(find.text('揭晓答案'));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(actions), initial);
+    final rating = find.widgetWithText(FilledButton, '认识');
+    final color = tester
+        .widget<FilledButton>(rating)
+        .style!
+        .backgroundColor!
+        .resolve({});
+    observed.gradeGate = Completer<void>();
+    addTearDown(() {
+      if (!observed.gradeGate!.isCompleted) observed.gradeGate!.complete();
+    });
+    await tester.tap(rating);
+    for (var i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.widget<FilledButton>(rating).onPressed, isNotNull);
+      expect(
+        tester.widget<FilledButton>(rating).style!.backgroundColor!.resolve({}),
+        color,
+      );
+      expect(tester.getRect(actions), initial);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    }
+    await tester.tap(rating, warnIfMissed: false);
+    expect(observed.gradeCalls, 1);
+    observed.gradeGate!.complete();
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      for (final area in actions.evaluate()) {
+        final box = area.renderObject! as RenderBox;
+        expect(box.localToGlobal(Offset.zero) & box.size, initial);
+      }
+    }
+    await tester.pumpAndSettle();
+    final next = tester.widget<ContentView>(find.byType(ContentView));
+    expect(next.source, isNot(first));
+    expect(next.revealed, isFalse);
+    expect(tester.getRect(actions), initial);
+    tester.view.physicalSize = const Size(320, 668);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.6;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpAndSettle();
+    final enlarged = tester.getRect(actions);
+    await tester.tap(find.text('揭晓答案'));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(actions), enlarged);
     expect(tester.takeException(), isNull);
   });
 
@@ -811,7 +1118,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('加入计划'));
     await tester.pumpAndSettle();
-    expect(find.text('已更新 3 张卡片'), findsWidgets);
+    expect((await store.counts((await store.decks()).single.id))['active'], 3);
     await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.tap(find.text('今日').last);

@@ -220,117 +220,125 @@ class _ShellState extends State<_Shell> {
       _StatsPage(store: widget.store),
       _SettingsPage(store: widget.store),
     ];
-    return Scaffold(
-      body: Row(
-        children: [
-          if (wide)
-            Container(
-              width: 112,
-              decoration: BoxDecoration(
-                border: Border(
-                  right: BorderSide(
-                    color: Theme.of(context).colorScheme.outlineVariant
-                        .withValues(alpha: .4),
+    return PopScope(
+      canPop: _index == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _index != 0) _select(0);
+      },
+      child: Scaffold(
+        body: Row(
+          children: [
+            if (wide)
+              Container(
+                width: 112,
+                decoration: BoxDecoration(
+                  border: Border(
+                    right: BorderSide(
+                      color: Theme.of(context).colorScheme.outlineVariant
+                          .withValues(alpha: .4),
+                    ),
                   ),
                 ),
-              ),
-              child: SafeArea(
-                child: Column(
-                  children: [
-                    const SizedBox(height: 28),
-                    const _BrandMark(size: 44),
-                    const SizedBox(height: 40),
-                    Expanded(
-                      child: NavigationRail(
-                        backgroundColor: Colors.transparent,
-                        selectedIndex: _index,
-                        onDestinationSelected: (i) => _select(i),
-                        labelType: NavigationRailLabelType.all,
-                        destinations: List.generate(
-                          4,
-                          (i) => NavigationRailDestination(
-                            icon: Icon(icons[i]),
-                            label: Text(labels[i]),
+                child: SafeArea(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 28),
+                      const _BrandMark(size: 44),
+                      const SizedBox(height: 40),
+                      Expanded(
+                        child: NavigationRail(
+                          backgroundColor: Colors.transparent,
+                          selectedIndex: _index,
+                          onDestinationSelected: (i) => _select(i),
+                          labelType: NavigationRailLabelType.all,
+                          destinations: List.generate(
+                            4,
+                            (i) => NavigationRailDestination(
+                              icon: Icon(icons[i]),
+                              label: Text(labels[i]),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 24),
-                      child: Text(
-                        'OPEN\nMARKJI',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 9,
-                          height: 1.6,
-                          letterSpacing: 2,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 24),
+                        child: Text(
+                          'OPEN\nMARKJI',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 9,
+                            height: 1.6,
+                            letterSpacing: 2,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-          Expanded(
-            child: Stack(
-              children: [
-                SafeArea(
-                  top: false,
-                  bottom: false,
-                  child: AnimatedSwitcher(
-                    duration: _duration(context, 300),
-                    transitionBuilder: (child, animation) =>
-                        widget.store.preferences.tabAnimation == 'fade'
-                        ? FadeTransition(opacity: animation, child: child)
-                        : SlideTransition(
-                            position:
-                                Tween<Offset>(
-                                  begin: Offset(
-                                    (child.key == ValueKey(_index) ? 1 : -1) *
-                                        _direction.toDouble(),
-                                    0,
+            Expanded(
+              child: Stack(
+                children: [
+                  SafeArea(
+                    top: false,
+                    bottom: false,
+                    child: AnimatedSwitcher(
+                      duration: _duration(context, 300),
+                      transitionBuilder: (child, animation) =>
+                          widget.store.preferences.tabAnimation == 'fade'
+                          ? FadeTransition(opacity: animation, child: child)
+                          : SlideTransition(
+                              position:
+                                  Tween<Offset>(
+                                    begin: Offset(
+                                      (child.key == ValueKey(_index) ? 1 : -1) *
+                                          _direction.toDouble(),
+                                      0,
+                                    ),
+                                    end: Offset.zero,
+                                  ).animate(
+                                    CurvedAnimation(
+                                      parent: animation,
+                                      curve: Curves.fastOutSlowIn,
+                                    ),
                                   ),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: animation,
-                                    curve: Curves.fastOutSlowIn,
-                                  ),
-                                ),
-                            child: child,
-                          ),
-                    child: KeyedSubtree(
-                      key: ValueKey(_index),
-                      child: pages[_index],
+                              child: child,
+                            ),
+                      child: KeyedSubtree(
+                        key: ValueKey(_index),
+                        child: pages[_index],
+                      ),
                     ),
                   ),
-                ),
-                if (!wide)
-                  Align(
-                    alignment: Alignment.bottomCenter,
-                    child: widget.store.preferences.floatingNavigation
-                        ? NavigationDock(
-                            destinations: _navigationDestinations,
-                            selectedIndex: _index,
-                            onSelected: _select,
-                          )
-                        : NavigationBar(
-                            selectedIndex: _index,
-                            onDestinationSelected: _select,
-                            destinations: [
-                              for (var i = 0; i < labels.length; i++)
-                                NavigationDestination(
-                                  icon: Icon(icons[i]),
-                                  label: labels[i],
-                                ),
-                            ],
-                          ),
-                  ),
-              ],
+                  if (!wide)
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: widget.store.preferences.floatingNavigation
+                          ? NavigationDock(
+                              destinations: _navigationDestinations,
+                              selectedIndex: _index,
+                              onSelected: _select,
+                            )
+                          : NavigationBar(
+                              selectedIndex: _index,
+                              onDestinationSelected: _select,
+                              destinations: [
+                                for (var i = 0; i < labels.length; i++)
+                                  NavigationDestination(
+                                    icon: Icon(icons[i]),
+                                    label: labels[i],
+                                  ),
+                              ],
+                            ),
+                    ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

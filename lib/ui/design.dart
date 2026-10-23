@@ -134,10 +134,168 @@ class _GlassChoice extends StatelessWidget {
                   Icon(icon, size: 18),
                   const SizedBox(width: 8),
                 ],
-                Text(label),
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _ProgressPhase { idle, loading, success }
+
+/// 保持同一块玻璃，从文字胶囊收缩为进度圆，再恢复宽度。
+class _GlassProgressButton extends StatefulWidget {
+  const _GlassProgressButton({
+    required this.label,
+    required this.onPressed,
+    required this.onComplete,
+  });
+  final String label;
+  final Future<bool> Function() onPressed;
+  final VoidCallback onComplete;
+  @override
+  State<_GlassProgressButton> createState() => _GlassProgressButtonState();
+}
+
+class _GlassProgressButtonState extends State<_GlassProgressButton>
+    with SingleTickerProviderStateMixin {
+  _ProgressPhase _phase = _ProgressPhase.idle;
+  late final _morph = AnimationController(vsync: this);
+
+  @override
+  void dispose() {
+    _morph.dispose();
+    super.dispose();
+  }
+
+  Future<void> _run() async {
+    if (_phase != _ProgressPhase.idle) return;
+    _morph.duration = _duration(context, 340);
+    _morph.reverseDuration = _duration(context, 420);
+    setState(() => _phase = _ProgressPhase.loading);
+    try {
+      final operation = widget.onPressed();
+      await _morph.forward().orCancel;
+      final success = await operation;
+      if (!mounted) return;
+      if (success) {
+        setState(() => _phase = _ProgressPhase.success);
+        await Future<void>.delayed(_duration(context, 650));
+        if (!mounted) return;
+      }
+      await _morph.reverse().orCancel;
+      setState(() => _phase = _ProgressPhase.idle);
+      widget.onComplete();
+    } on TickerCanceled {
+      // 页面退出时随按钮一起结束反馈动画。
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).colorScheme;
+    final textStyle = Theme.of(context).textTheme.labelLarge!;
+    final text = TextPainter(
+      text: TextSpan(text: widget.label, style: textStyle),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    final width = math.max(44.0, text.width + 32);
+    text.dispose();
+    return Semantics(
+      liveRegion: true,
+      label: switch (_phase) {
+        _ProgressPhase.loading => '正在${widget.label}',
+        _ProgressPhase.success => '已加入计划',
+        _ => widget.label,
+      },
+      child: _GlassGroup(
+        pill: true,
+        child: AnimatedBuilder(
+          animation: _morph,
+          builder: (context, child) {
+            final shape = Curves.easeInOutCubic.transform(_morph.value);
+            return SizedBox(
+              key: const ValueKey('enroll-progress'),
+              width: width + (44 - width) * shape,
+              height: 44,
+              child: TextButton(
+                onPressed: _phase == _ProgressPhase.idle ? _run : null,
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  foregroundColor: c.onSurface,
+                  disabledForegroundColor: c.onSurface,
+                ),
+                child: ClipRect(
+                  child: OverflowBox(
+                    minWidth: width,
+                    maxWidth: width,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        Opacity(
+                          opacity: (1 - shape * 3).clamp(0.0, 1.0),
+                          child: Text(widget.label, style: textStyle),
+                        ),
+                        if (_phase != _ProgressPhase.idle)
+                          Opacity(
+                            opacity: ((shape - .5) * 2).clamp(0.0, 1.0),
+                            child: AnimatedSwitcher(
+                              duration: _duration(context, 280),
+                              reverseDuration: _duration(context, 140),
+                              transitionBuilder: (child, animation) =>
+                                  FadeTransition(
+                                    opacity: animation,
+                                    child:
+                                        child.key ==
+                                            const ValueKey('enroll-success')
+                                        ? ScaleTransition(
+                                            scale: animation.drive(
+                                              Tween<double>(
+                                                begin: .55,
+                                                end: 1,
+                                              ).chain(
+                                                CurveTween(
+                                                  curve: Curves.easeOutBack,
+                                                ),
+                                              ),
+                                            ),
+                                            child: child,
+                                          )
+                                        : child,
+                                  ),
+                              child: _phase == _ProgressPhase.loading
+                                  ? SizedBox.square(
+                                      key: const ValueKey('enroll-loading'),
+                                      dimension: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: c.primary,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.check_rounded,
+                                      key: ValueKey('enroll-success'),
+                                      size: 24,
+                                    ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
