@@ -23,138 +23,144 @@ class _TodayPage extends StatelessWidget {
                 '${now.month} 月 ${now.day} 日  ·  星期${['一', '二', '三', '四', '五', '六', '日'][now.weekday - 1]}',
             trailing: const _BrandMark(),
             children: [
-              Container(
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(32),
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      c.primaryContainer,
-                      c.secondaryContainer.withValues(alpha: .65),
-                    ],
+              _TouchTiltCard(
+                child: Container(
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(32),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        c.primaryContainer,
+                        c.secondaryContainer.withValues(alpha: .65),
+                      ],
+                    ),
                   ),
-                ),
-                child: Stack(
-                  children: [
-                    Positioned(
-                      right: -48,
-                      top: -54,
-                      child: IgnorePointer(
-                        child: CustomPaint(
-                          size: const Size(270, 270),
-                          painter: _OrbitPainter(
-                            c.primary.withValues(alpha: .11),
+                  child: Stack(
+                    children: [
+                      Positioned(
+                        right: -48,
+                        top: -54,
+                        child: IgnorePointer(
+                          child: CustomPaint(
+                            size: const Size(270, 270),
+                            painter: _OrbitPainter(
+                              c.primary.withValues(alpha: .11),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(26),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.auto_awesome_outlined,
-                                size: 17,
-                                color: c.onPrimaryContainer,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'TODAY’S FOCUS',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    letterSpacing: 2.2,
-                                    fontWeight: FontWeight.w600,
-                                    color: c.onPrimaryContainer,
+                      Padding(
+                        padding: const EdgeInsets.all(26),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.auto_awesome_outlined,
+                                  size: 17,
+                                  color: c.onPrimaryContainer,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'TODAY’S FOCUS',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      letterSpacing: 2.2,
+                                      fontWeight: FontWeight.w600,
+                                      color: c.onPrimaryContainer,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 24),
-                          Text(
-                            remaining > 0
-                                ? '$remaining'
-                                : completed > 0
-                                ? '做得很好'
-                                : '从一张卡开始',
-                            style: TextStyle(
-                              fontSize: remaining > 0 ? 64 : 32,
-                              height: 1.15,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -2,
-                              color: c.onPrimaryContainer,
+                              ],
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            remaining > 0
-                                ? '张卡片，等待今天的你'
-                                : completed > 0
-                                ? '今天的任务已完成，让知识沉淀一下。'
-                                : '给值得记住的知识，一个留下来的地方。',
-                            style: TextStyle(
-                              fontSize: 14,
-                              height: 1.6,
-                              color: c.onPrimaryContainer.withValues(alpha: .8),
-                            ),
-                          ),
-                          const SizedBox(height: 26),
-                          SizedBox(
-                            width: double.infinity,
-                            child: FilledButton.icon(
-                              onPressed: remaining > 0
-                                  ? () =>
-                                        _push(context, _StudyPage(store: store))
-                                  : onLibrary,
-                              icon: Icon(
-                                remaining > 0
-                                    ? Icons.play_arrow_rounded
-                                    : Icons.add_rounded,
-                              ),
-                              label: Text(
-                                remaining > 0
-                                    ? completed > 0 ||
-                                              (data['formal'] as int) > 0
-                                          ? '继续学习'
-                                          : '开始今日学习'
-                                    : hasCards
-                                    ? '去牌组选择学习内容'
-                                    : '建立我的第一副牌组',
-                              ),
-                            ),
-                          ),
-                          if (remaining + completed > 0) ...[
-                            const SizedBox(height: 18),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: ExcludeSemantics(
-                                child: LinearProgressIndicator(
-                                  value: completed / (remaining + completed),
-                                  minHeight: 5,
-                                  backgroundColor: c.onPrimaryContainer
-                                      .withValues(alpha: .08),
-                                ),
+                            const SizedBox(height: 24),
+                            Text(
+                              remaining > 0
+                                  ? '$remaining'
+                                  : completed > 0
+                                  ? '做得很好'
+                                  : '从一张卡开始',
+                              style: TextStyle(
+                                fontSize: remaining > 0 ? 64 : 32,
+                                height: 1.15,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -2,
+                                color: c.onPrimaryContainer,
                               ),
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              '已完成 $completed 张 · 一点一滴，都算数',
+                              remaining > 0
+                                  ? '张卡片，等待今天的你'
+                                  : completed > 0
+                                  ? '今天的任务已完成，让知识沉淀一下。'
+                                  : '给值得记住的知识，一个留下来的地方。',
                               style: TextStyle(
-                                fontSize: 11,
-                                color: c.onPrimaryContainer,
+                                fontSize: 14,
+                                height: 1.6,
+                                color: c.onPrimaryContainer.withValues(
+                                  alpha: .8,
+                                ),
                               ),
                             ),
+                            const SizedBox(height: 26),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: remaining > 0
+                                    ? () => _push(
+                                        context,
+                                        _StudyPage(store: store),
+                                      )
+                                    : onLibrary,
+                                icon: Icon(
+                                  remaining > 0
+                                      ? Icons.play_arrow_rounded
+                                      : Icons.add_rounded,
+                                ),
+                                label: Text(
+                                  remaining > 0
+                                      ? completed > 0 ||
+                                                (data['formal'] as int) > 0
+                                            ? '继续学习'
+                                            : '开始今日学习'
+                                      : hasCards
+                                      ? '去牌组选择学习内容'
+                                      : '建立我的第一副牌组',
+                                ),
+                              ),
+                            ),
+                            if (remaining + completed > 0) ...[
+                              const SizedBox(height: 18),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: ExcludeSemantics(
+                                  child: LinearProgressIndicator(
+                                    value: completed / (remaining + completed),
+                                    minHeight: 5,
+                                    backgroundColor: c.onPrimaryContainer
+                                        .withValues(alpha: .08),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                '已完成 $completed 张 · 一点一滴，都算数',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: c.onPrimaryContainer,
+                                ),
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -269,6 +275,121 @@ class _TodayPage extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 监听原始触点，不参与手势竞争，保留卡片按钮和页面滚动。
+class _TouchTiltCard extends StatefulWidget {
+  const _TouchTiltCard({required this.child});
+  final Widget child;
+
+  @override
+  State<_TouchTiltCard> createState() => _TouchTiltCardState();
+}
+
+class _TouchTiltCardState extends State<_TouchTiltCard>
+    with SingleTickerProviderStateMixin {
+  late final _return = AnimationController.unbounded(vsync: this);
+  Offset _touch = Offset.zero;
+  int? _pointer;
+  bool _reducedMotion = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reducedMotion = MediaQuery.disableAnimationsOf(context);
+    if (_reducedMotion) {
+      _pointer = null;
+      _return.value = 0;
+    }
+  }
+
+  void _follow(PointerEvent event) {
+    final box = context.findRenderObject()! as RenderBox;
+    final position = box.globalToLocal(event.position);
+    setState(() {
+      _touch = Offset(
+        (position.dx / box.size.width * 2 - 1).clamp(-1.0, 1.0),
+        (position.dy / box.size.height * 2 - 1).clamp(-1.0, 1.0),
+      );
+    });
+  }
+
+  void _release(PointerEvent event) {
+    if (event.pointer != _pointer) return;
+    _pointer = null;
+    _return.animateWith(
+      SpringSimulation(
+        const SpringDescription(mass: 1, stiffness: 260, damping: 23),
+        1,
+        0,
+        0,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _return.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: (event) {
+      if (_reducedMotion || _pointer != null) return;
+      _pointer = event.pointer;
+      _return.value = 1;
+      _follow(event);
+    },
+    onPointerMove: (event) {
+      if (event.pointer == _pointer) _follow(event);
+    },
+    onPointerUp: _release,
+    onPointerCancel: _release,
+    child: AnimatedBuilder(
+      animation: _return,
+      child: RepaintBoundary(child: widget.child),
+      builder: (context, child) {
+        final amount = _return.value;
+        final light = amount.clamp(0.0, 1.0);
+        final dark = Theme.of(context).brightness == Brightness.dark;
+        return Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()
+            ..setEntry(3, 2, .001)
+            ..rotateX(_touch.dy * .10 * amount)
+            ..rotateY(-_touch.dx * .10 * amount),
+          child: Stack(
+            children: [
+              child!,
+              if (light > 0)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(32),
+                        gradient: RadialGradient(
+                          center: Alignment(_touch.dx, _touch.dy),
+                          radius: .85,
+                          colors: [
+                            Colors.white.withValues(
+                              alpha: (dark ? .20 : .36) * light,
+                            ),
+                            Colors.white.withValues(alpha: .08 * light),
+                            Colors.white.withValues(alpha: 0),
+                          ],
+                          stops: const [0, .35, 1],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
 }
 
 class _OrbitPainter extends CustomPainter {
