@@ -16,6 +16,8 @@ class OfficialDeck {
 
 const officialDeckGroup = '官方';
 const officialLibraryDeckId = 'official-library';
+// 词表内容变更时递增；已导入的安装无需每次启动重新解析整套资源。
+const officialLibraryVersion = '1';
 
 /// 六级词表文件只收录相对四级新增的词。牌组展示时并入四级，考试范围才完整。
 const officialDeckIncludes = <String, List<String>>{

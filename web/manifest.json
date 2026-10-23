@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#faf9ff",
     "theme_color": "#5479bc",
-    "description": "离线记忆卡、墨墨语法与每日间隔复习。",
+    "description": "离线记忆卡、文本制卡与每日间隔复习。",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

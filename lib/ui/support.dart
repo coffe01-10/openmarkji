@@ -61,7 +61,7 @@ class _AboutPage extends StatelessWidget {
         const Padding(
           padding: EdgeInsets.all(20),
           child: Text(
-            '无需账号，本地保存。\n本项目是独立的开源记忆卡应用，与墨墨记忆卡没有隶属关系。',
+            '无需账号，本地保存。\n编写卡片、安排学习，让知识慢慢积累。',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12, height: 1.8),
           ),

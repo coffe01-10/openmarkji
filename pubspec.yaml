@@ -1,5 +1,5 @@
 name: openmarkji
-description: "离线优先的开源记忆卡：墨墨语法、MMX 调度与每日学习计划。"
+description: "离线优先的开源记忆卡：文本制卡、MMX 调度与每日学习计划。"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

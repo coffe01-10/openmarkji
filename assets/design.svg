@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="516" viewBox="0 0 1040 516" role="img" aria-label="OpenMarkji 使用流程：导入、学习、复习" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans SC','Noto Sans CJK SC',sans-serif">
 <title>OpenMarkji 使用流程</title>
-<desc>导入 → 学习 → 复习：用墨墨语法写卡并自动切卡；先回忆再揭晓，按认识、模糊、忘记评分；MMX 按 85% 目标保留率排期，到期卡片每天回到今日。</desc>
+<desc>导入 → 学习 → 复习：用文本编写卡片并按分隔行切卡；先回忆再揭晓，按认识、模糊、忘记评分；MMX 按 85% 目标保留率排期，到期卡片每天回到今日。</desc>
 <!-- 浅色取值写在属性里，深色取值只在媒体查询中覆盖。 -->
 <style>
 @media (prefers-color-scheme: dark) {
@@ -60,7 +60,7 @@
 <rect class="panel" x="14" y="14" width="260" height="160" rx="12" fill="#EEF2FB"/>
 <g transform="translate(14 14)">
 <rect class="sheet" x="12" y="14" width="128" height="132" rx="9" fill="#FFFFFF" stroke="#E1E7F2" filter="url(#lift2)"/>
-<text class="sub" x="22" y="31" font-size="9.5" fill="#5F6368">墨墨语法</text>
+<text class="sub" x="22" y="31" font-size="9.5" fill="#5F6368">卡片语法</text>
 <line class="rule" x1="12" y1="38.5" x2="140" y2="38.5" stroke="#E8EAED"/>
 <rect class="band" x="12.5" y="104.5" width="127" height="15" fill="#FEF7E0"/>
 <rect class="yel" x="12.5" y="104.5" width="2.5" height="15" fill="#FBBC04"/>
@@ -94,7 +94,7 @@
 <text class="chipT" x="38" y="207.4" text-anchor="middle" font-size="12" font-weight="700" fill="#1967D2">01</text>
 <text class="ink" x="66" y="211" font-size="22" font-weight="700" fill="#202124">导入</text>
 <text class="faint" x="268" y="207.4" text-anchor="end" font-size="11" font-weight="600" letter-spacing="1.5" fill="#80868B">IMPORT</text>
-<text class="ink2" font-size="14.5" fill="#3C4043"><tspan x="20" y="243">纯文本写卡，自动解析墨墨语法</tspan><tspan x="20" y="265">问答、挖空、公式与答案线</tspan></text>
+<text class="ink2" font-size="14.5" fill="#3C4043"><tspan x="20" y="243">纯文本写卡，轻松整理知识</tspan><tspan x="20" y="265">问答、挖空、公式与答案线</tspan></text>
 </g>
 
 <!-- 02 学习 -->

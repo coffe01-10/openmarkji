@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1040" height="516" viewBox="0 0 1040 516" role="img" aria-label="How OpenMarkji works: import, study, review" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans SC','Noto Sans CJK SC',sans-serif">
 <title>How OpenMarkji works</title>
-<desc>Import → Study → Review: write cards in Markji syntax and they are split automatically; recall before revealing, then rate Know, Vague or Forgot; MMX schedules for 85% target retention, and due cards return to Today each day.</desc>
+<desc>Import → Study → Review: write cards in text and split them using a separator line; recall before revealing, then rate Know, Vague or Forgot; MMX schedules for 85% target retention, and due cards return to Today each day.</desc>
 <!-- 浅色取值写在属性里，深色取值只在媒体查询中覆盖。 -->
 <style>
 @media (prefers-color-scheme: dark) {
@@ -60,7 +60,7 @@
 <rect class="panel" x="14" y="14" width="260" height="160" rx="12" fill="#EEF2FB"/>
 <g transform="translate(14 14)">
 <rect class="sheet" x="12" y="14" width="128" height="132" rx="9" fill="#FFFFFF" stroke="#E1E7F2" filter="url(#lift2)"/>
-<text class="sub" x="22" y="31" font-size="9.5" fill="#5F6368">Markji syntax</text>
+<text class="sub" x="22" y="31" font-size="9.5" fill="#5F6368">Card syntax</text>
 <line class="rule" x1="12" y1="38.5" x2="140" y2="38.5" stroke="#E8EAED"/>
 <rect class="band" x="12.5" y="104.5" width="127" height="15" fill="#FEF7E0"/>
 <rect class="yel" x="12.5" y="104.5" width="2.5" height="15" fill="#FBBC04"/>
@@ -93,7 +93,7 @@
 <rect class="chip" x="20" y="192" width="36" height="22" rx="11" fill="#E8F0FE"/>
 <text class="chipT" x="38" y="207.4" text-anchor="middle" font-size="12" font-weight="700" fill="#1967D2">01</text>
 <text class="ink" x="66" y="211" font-size="22" font-weight="700" fill="#202124">Import</text>
-<text class="ink2" font-size="14.5" fill="#3C4043"><tspan x="20" y="243">Write cards in plain Markji syntax</tspan><tspan x="20" y="265">Q&amp;A, cloze, formulas, answer lines</tspan></text>
+<text class="ink2" font-size="14.5" fill="#3C4043"><tspan x="20" y="243">Write cards and organize knowledge</tspan><tspan x="20" y="265">Q&amp;A, cloze, formulas, answer lines</tspan></text>
 </g>
 
 <!-- 02 Study -->

@@ -23,8 +23,12 @@ class _StatisticsViewsState extends State<_StatisticsViews> {
     _revision = widget.store.revision;
     _data =
         Future.wait([
-          widget.store.retentionStats(days: 30),
-          widget.store.learningStatistics(period: _period),
+          _tab == 0
+              ? widget.store.retentionStats(days: 30)
+              : Future.value(<String, dynamic>{}),
+          _tab != 0
+              ? widget.store.learningStatistics(period: _period)
+              : Future.value(<LearningBucket>[]),
         ]).then(
           (values) => (
             values[0] as Map<String, dynamic>,
@@ -46,7 +50,10 @@ class _StatisticsViewsState extends State<_StatisticsViews> {
       _StatsChoices<int>(
         options: const {0: '遗忘曲线', 1: '学习情况', 2: '记忆持久度'},
         value: _tab,
-        onChanged: (v) => setState(() => _tab = v),
+        onChanged: (v) => setState(() {
+          _tab = v;
+          _load();
+        }),
       ),
       const SizedBox(height: 16),
       if (_tab != 0) ...[
@@ -331,7 +338,8 @@ class _StatisticsGraph extends StatefulWidget {
 
 class _StatisticsGraphState extends State<_StatisticsGraph> {
   late int _selected = widget.initialIndex;
-  final _scroll = ScrollController();
+  // 每张图自行定位当前日期，不继承其他统计图的 PageStorage 偏移。
+  final _scroll = ScrollController(keepScrollOffset: false);
   final _viewport = GlobalKey();
   bool _positioned = false;
   @override

@@ -215,7 +215,7 @@ class _TodayPage extends StatelessWidget {
                     ? _Empty(
                         icon: Icons.spa_outlined,
                         title: '先种下一颗知识的种子',
-                        detail: '导入墨墨文本，或写下自己的第一张卡。\n选入计划后，我们会安排每天的复习。',
+                        detail: '导入卡片文本，或写下自己的第一张卡。\n选入计划后，我们会安排每天的复习。',
                         action: TextButton.icon(
                           onPressed: () => _action(context, store.addExamples),
                           icon: const Icon(Icons.explore_outlined),
@@ -414,7 +414,7 @@ class _StatsPage extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: store,
     builder: (context, _) => _Load(
-      future: Future.wait([store.overview(), store.activity()]),
+      future: Future.wait([store.studySummary(), store.activity()]),
       builder: (data) {
         final overview = data[0] as Map<String, dynamic>,
             activity = data[1] as List<Map<String, dynamic>>;

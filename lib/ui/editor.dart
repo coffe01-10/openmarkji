@@ -288,7 +288,7 @@ class _EditorPageState extends State<_EditorPage> {
                 ),
                 child: Row(
                   children: [
-                    const _Pill('墨墨语法', icon: Icons.code_rounded),
+                    const _Pill('卡片语法', icon: Icons.code_rounded),
                     const Spacer(),
                     Text(
                       '草稿自动保存',
@@ -372,7 +372,7 @@ class _EditorPageState extends State<_EditorPage> {
                             padding: EdgeInsets.all(24),
                             child: SingleChildScrollView(
                               child: SelectableText(
-                                '常用墨墨语法\n\n[T#B#加粗]\n[T#!!fff59d#高亮]\n[F#1#挖空答案]\n[P#H1#标题]\n[E##x^2+y^2=z^2]\n---（独立一行分隔答案）\n\n同编号的挖空一起揭晓。普通中括号写成 \\[ 和 \\]。图片通过工具栏插入；未支持的语法会保留原文。',
+                                '常用卡片语法\n\n[T#B#加粗]\n[T#!!fff59d#高亮]\n[F#1#挖空答案]\n[P#H1#标题]\n[E##x^2+y^2=z^2]\n---（独立一行分隔答案）\n\n同编号的挖空一起揭晓。普通中括号写成 \\[ 和 \\]。图片通过工具栏插入；未支持的语法会保留原文。',
                                 style: TextStyle(height: 1.8),
                               ),
                             ),
@@ -478,7 +478,7 @@ class _ImportPageState extends State<_ImportPage> {
                       ),
                       const SizedBox(height: 18),
                       _GlassSegments<bool>(
-                        options: const {false: '墨墨语法', true: '纯文本'},
+                        options: const {false: '卡片语法', true: '纯文本'},
                         value: _plain,
                         onChanged: (value) => setState(() => _plain = value),
                       ),

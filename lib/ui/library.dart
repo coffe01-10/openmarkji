@@ -184,7 +184,7 @@ class _LibraryPageState extends State<_LibraryPage> {
                   onPressed: () =>
                       _push(context, _ImportPage(store: widget.store)),
                   icon: const Icon(Icons.file_download_outlined),
-                  label: const Text('导入墨墨文本'),
+                  label: const Text('导入卡片文本'),
                 ),
               ),
             ),

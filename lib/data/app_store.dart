@@ -6,14 +6,13 @@ import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 
 import '../algorithms/mmx.dart';
-import '../algorithms/mmx5.dart';
-import '../algorithms/mmx6.dart';
 import '../content/markji.dart';
 import '../content/official_decks.dart';
 import '../domain/entities.dart';
 import '../domain/statistics.dart';
 import 'connection.dart';
 import 'database.dart';
+import 'statistics_compute.dart';
 
 class AppStore extends ChangeNotifier {
   AppStore(this.db, {this.loadOfficialDecks = true});
@@ -24,9 +23,17 @@ class AppStore extends ChangeNotifier {
   Preferences preferences = Preferences();
   final _changes = StreamController<void>.broadcast();
   int revision = 0;
+  Future<Map<String, dynamic>>? _overviewCache;
+  String? _overviewDay;
+  final _retentionCache = <(String, int), Future<Map<String, dynamic>>>{};
+  final _learningCache =
+      <(String, StatisticsPeriod), Future<List<LearningBucket>>>{};
   bool _submitting = false;
   void changed() {
     revision++;
+    _overviewCache = null;
+    _retentionCache.clear();
+    _learningCache.clear();
     _changes.add(null);
     notifyListeners();
   }
@@ -551,86 +558,93 @@ class AppStore extends ChangeNotifier {
     return raw == null ? null : StudySession.fromJson(decodeObject(raw));
   }
 
-  Future<StudySession> prepareSession({DateTime? at}) => db.transaction(
-    () async {
-      final now = at ?? DateTime.now();
-      final today = dayKey(now);
-      final old = await session();
-      final queue = <QueueEntry>[];
-      final seen = <String>{};
-      final active = (await db.rows("SELECT id FROM cards WHERE plan='active'"))
-          .map((r) => r['id'] as String)
-          .toSet();
-      if (old != null) {
-        for (final e in old.queue) {
-          if (active.contains(e.cardId) &&
-              (old.day == today || e.stage == 'relearn') &&
-              seen.add(e.cardId)) {
-            queue.add(e);
+  Future<StudySession> prepareSession({DateTime? at}) =>
+      db.transaction(() async {
+        final now = at ?? DateTime.now();
+        final today = dayKey(now);
+        final old = await session();
+        final queue = <QueueEntry>[];
+        final seen = <String>{};
+        final active = old == null || old.queue.isEmpty
+            ? <String>{}
+            : (await db.rows(
+                "SELECT id FROM cards WHERE plan='active' AND id IN (SELECT value FROM json_each(?))",
+                [jsonEncode(old.queue.map((entry) => entry.cardId).toList())],
+              )).map((r) => r['id'] as String).toSet();
+        if (old != null) {
+          for (final e in old.queue) {
+            if (active.contains(e.cardId) &&
+                (old.day == today || e.stage == 'relearn') &&
+                seen.add(e.cardId)) {
+              queue.add(e);
+            }
           }
         }
-      }
-      final due = await db.rows(
-        "SELECT id FROM cards WHERE plan='active' AND due_at<? AND NOT EXISTS (SELECT 1 FROM reviews WHERE card_id=cards.id AND kind='formal' AND reviewed_at>=? AND reviewed_at<?) ORDER BY due_at",
-        [
-          dayEnd(now).millisecondsSinceEpoch,
-          dayStart(now).millisecondsSinceEpoch,
-          dayEnd(now).millisecondsSinceEpoch,
-        ],
-      );
-      final reviews = <QueueEntry>[];
-      for (final r in due) {
-        if (seen.add(r['id'])) reviews.add(QueueEntry(r['id'], 'review'));
-      }
-      // Due reviews precede unstarted new material; existing relearning order is preserved.
-      final firstNew = queue.indexWhere((e) => e.stage == 'new');
-      queue.insertAll(firstNew < 0 ? 0 : firstNew, reviews);
-      for (final d in await decks()) {
-        final studied =
-            (await db.rows(
-                  'SELECT count(*) n FROM cards JOIN card_decks ON card_decks.card_id=cards.id WHERE card_decks.deck_id=? AND first_learned>=? AND first_learned<?',
-                  [
-                    d.id,
-                    dayStart(now).millisecondsSinceEpoch,
-                    dayEnd(now).millisecondsSinceEpoch,
-                  ],
-                )).first['n']
-                as int;
-        final fresh = await db.rows(
-          "SELECT cards.id FROM cards JOIN card_decks ON card_decks.card_id=cards.id WHERE card_decks.deck_id=? AND plan='active' AND first_learned IS NULL ORDER BY enrolled_at,cards.rowid LIMIT ?",
-          [d.id, math.max(0, d.newLimit - studied)],
+        final due = await db.rows(
+          "SELECT id FROM cards WHERE plan='active' AND due_at<? AND NOT EXISTS (SELECT 1 FROM reviews WHERE card_id=cards.id AND kind='formal' AND reviewed_at>=? AND reviewed_at<?) ORDER BY due_at",
+          [
+            dayEnd(now).millisecondsSinceEpoch,
+            dayStart(now).millisecondsSinceEpoch,
+            dayEnd(now).millisecondsSinceEpoch,
+          ],
         );
-        final allowed = fresh.map((e) => e['id']).toSet();
-        // Reducing the daily limit removes new cards that have not been studied yet.
-        final deckIds = (await db.rows(
-          'SELECT card_id FROM card_decks WHERE deck_id=?',
-          [d.id],
-        )).map((e) => e['card_id']).toSet();
-        queue.removeWhere(
-          (e) =>
-              e.stage == 'new' &&
-              deckIds.contains(e.cardId) &&
-              !allowed.contains(e.cardId),
-        );
-        for (final r in fresh) {
-          if (seen.add(r['id'])) queue.add(QueueEntry(r['id'], 'new'));
+        final reviews = <QueueEntry>[];
+        for (final r in due) {
+          if (seen.add(r['id'])) reviews.add(QueueEntry(r['id'], 'review'));
         }
-      }
-      final next = StudySession(
-        day: today,
-        queue: queue,
-        completed: old?.day == today ? old!.completed : 0,
-        started: old?.day == today ? old!.started : 0,
-      );
-      await setSetting('session', jsonEncode(next.toJson()));
-      if (old?.day != today) await clearSetting('undo');
-      return next;
-    },
-  );
+        // Due reviews precede unstarted new material; existing relearning order is preserved.
+        final firstNew = queue.indexWhere((e) => e.stage == 'new');
+        queue.insertAll(firstNew < 0 ? 0 : firstNew, reviews);
+        for (final d in await decks()) {
+          final studied =
+              (await db.rows(
+                    'SELECT count(*) n FROM cards WHERE first_learned>=? AND first_learned<? AND EXISTS (SELECT 1 FROM card_decks WHERE card_id=cards.id AND deck_id=?)',
+                    [
+                      dayStart(now).millisecondsSinceEpoch,
+                      dayEnd(now).millisecondsSinceEpoch,
+                      d.id,
+                    ],
+                  )).first['n']
+                  as int;
+          final fresh = await db.rows(
+            "SELECT id FROM cards WHERE plan='active' AND first_learned IS NULL AND EXISTS (SELECT 1 FROM card_decks WHERE card_id=cards.id AND deck_id=?) ORDER BY enrolled_at,cards.rowid LIMIT ?",
+            [d.id, math.max(0, d.newLimit - studied)],
+          );
+          final allowed = fresh.map((e) => e['id']).toSet();
+          // Reducing the daily limit removes new cards that have not been studied yet.
+          final pendingNew = queue
+              .where((e) => e.stage == 'new')
+              .map((e) => e.cardId)
+              .toList();
+          if (pendingNew.isNotEmpty) {
+            final deckIds = (await db.rows(
+              'SELECT card_id FROM card_decks WHERE deck_id=? AND card_id IN (SELECT value FROM json_each(?))',
+              [d.id, jsonEncode(pendingNew)],
+            )).map((e) => e['card_id']).toSet();
+            queue.removeWhere(
+              (e) =>
+                  e.stage == 'new' &&
+                  deckIds.contains(e.cardId) &&
+                  !allowed.contains(e.cardId),
+            );
+          }
+          for (final r in fresh) {
+            if (seen.add(r['id'])) queue.add(QueueEntry(r['id'], 'new'));
+          }
+        }
+        final next = StudySession(
+          day: today,
+          queue: queue,
+          completed: old?.day == today ? old!.completed : 0,
+          started: old?.day == today ? old!.started : 0,
+        );
+        await setSetting('session', jsonEncode(next.toJson()));
+        if (old?.day != today) await clearSetting('undo');
+        return next;
+      });
 
-  MmxAlgorithm algorithm(DeckData d, int version) => version == 5
-      ? (d.params.length == 12 ? Mmx5(d.params) : const Mmx5())
-      : (d.params.length == 21 ? Mmx6(d.params) : const Mmx6());
+  MmxAlgorithm algorithm(DeckData d, int version) =>
+      algorithmForDeck(d, version);
   Future<void> grade(
     RecallGrade grade, {
     required int elapsedMs,
@@ -773,15 +787,19 @@ class AppStore extends ChangeNotifier {
         "SELECT payload FROM reviews WHERE card_id=? AND kind='formal' ORDER BY reviewed_at,rowid",
         [cardId],
       )).map((r) => decodeObject(r['payload'])).toList();
-  Future<Map<String, dynamic>> overview({DateTime? at}) async {
-    final now = at ?? DateTime.now();
+  Future<Map<String, dynamic>> overview({DateTime? at}) {
+    if (at != null) return _readOverview(at);
+    final now = DateTime.now();
+    if (_overviewCache == null || _overviewDay != dayKey(now)) {
+      _overviewDay = dayKey(now);
+      _overviewCache = _readOverview(now);
+    }
+    return _overviewCache!;
+  }
+
+  Future<Map<String, dynamic>> _readOverview(DateTime now) async {
     final s = await prepareSession(at: now);
-    final start = dayStart(now).millisecondsSinceEpoch,
-        end = dayEnd(now).millisecondsSinceEpoch;
-    final row = (await db.rows(
-      "SELECT count(*) attempts, coalesce(sum(kind='formal'),0) formal, coalesce(sum(kind='practice'),0) practice, coalesce(sum(elapsed_ms),0) elapsed, coalesce(sum(kind='formal' AND grade IN (1,4)),0) recalled FROM reviews WHERE reviewed_at>=? AND reviewed_at<?",
-      [start, end],
-    )).first;
+    final row = await studySummary(at: now);
     return {
       ...row,
       'review': s.queue.where((e) => e.stage == 'review').length,
@@ -791,6 +809,17 @@ class AppStore extends ChangeNotifier {
       'completed': s.completed,
       'totalCards': (await db.rows('SELECT count(*) n FROM cards')).first['n'],
     };
+  }
+
+  Future<Map<String, dynamic>> studySummary({DateTime? at}) async {
+    final now = at ?? DateTime.now();
+    final start = dayStart(now).millisecondsSinceEpoch,
+        end = dayEnd(now).millisecondsSinceEpoch;
+    final row = (await db.rows(
+      "SELECT count(*) attempts, coalesce(sum(kind='formal'),0) formal, coalesce(sum(kind='practice'),0) practice, coalesce(sum(elapsed_ms),0) elapsed, coalesce(sum(kind='formal' AND grade IN (1,4)),0) recalled FROM reviews WHERE reviewed_at>=? AND reviewed_at<?",
+      [start, end],
+    )).first;
+    return row;
   }
 
   Future<List<Map<String, dynamic>>> activity() => db.rows(
@@ -813,195 +842,73 @@ class AppStore extends ChangeNotifier {
     return values;
   }
 
-  /// 历史正式复习评分与未来 MMX 预测使用不同时间轴，缺失观测保留为空。
-  Future<Map<String, dynamic>> retentionStats({
-    int days = 14,
-    DateTime? at,
-  }) async {
-    final now = at ?? DateTime.now();
-    final dayList = List<int>.generate(days + 1, (i) => i);
-    final dates = [
-      for (final d in dayList)
-        DateTime(now.year, now.month, now.day - days + d),
-    ];
-    final counts = List.filled(days + 1, 0);
-    final remembered = List.filled(days + 1, 0);
-    final indices = {
-      for (var i = 0; i < dates.length; i++) dayKey(dates[i]): i,
-    };
-    final reviews = await db.rows(
-      "SELECT reviewed_at, grade, payload FROM reviews WHERE kind='formal' AND reviewed_at>=? AND reviewed_at<=?",
-      [dates.first.millisecondsSinceEpoch, now.millisecondsSinceEpoch],
-    );
-    for (final row in reviews) {
-      final log = decodeObject(row['payload']);
-      // 首次学习的自评不是隔日回忆观测；当日重学已由 kind 过滤。
-      if (((log['interval_days'] as num?) ?? 0) <= 0) continue;
-      final date = DateTime.fromMillisecondsSinceEpoch(
-        row['reviewed_at'] as int,
-      );
-      final i = indices[dayKey(date)]!;
-      counts[i]++;
-      if (row['grade'] == 1 || row['grade'] == 4) remembered[i]++;
-    }
-    final actual = <double?>[
-      for (final i in dayList)
-        counts[i] == 0 ? null : remembered[i] / counts[i] * 100,
-    ];
-
-    // 每张卡按自己的状态版本、牌组参数和距上次正式复习的时间预测，
-    // 再对概率求平均；不能把平均稳定性代入一个任意指数函数。
-    final forecast = List<double>.filled(days + 1, 0);
-    final learningCurve = List<double>.filled(days + 1, 0);
-    var modeledCards = 0;
-    final cardRows = await db.rows(
-      "SELECT c.payload card_payload, d.payload deck_payload FROM cards c JOIN decks d ON d.id=c.deck_id WHERE c.plan='active'",
-    );
-    for (final row in cardRows) {
-      final c = StudyCard.fromJson(decodeObject(row['card_payload']));
-      if (c.state == null || c.lastReview == null) continue;
-      final state = MmxState.fromJsonString(c.state!);
-      if (!state.stability.isFinite || state.stability <= 0) continue;
-      final deck = DeckData.fromJson(decodeObject(row['deck_payload']));
-      final model = algorithm(deck, state.version);
-      final elapsed = math.max(
-        0.0,
-        now.difference(c.lastReview!).inMilliseconds /
-            Duration.millisecondsPerDay,
-      );
-      for (final d in dayList) {
-        forecast[d] +=
-            model.forgettingCurve(elapsed + d, state.stability) * 100;
-        learningCurve[d] +=
-            model.forgettingCurve(d.toDouble(), state.stability) * 100;
-      }
-      modeledCards++;
-    }
-
-    return {
-      'actual': actual,
-      'counts': counts,
-      'dates': dates,
-      'forecast': <double?>[
-        for (final value in forecast)
-          modeledCards == 0 ? null : value / modeledCards,
-      ],
-      'modeledCards': modeledCards,
-      'learningCurve': <double?>[
-        for (final value in learningCurve)
-          modeledCards == 0 ? null : value / modeledCards,
-      ],
-      'days': dayList,
-    };
+  /// 已读取的统计在数据变更或跨日后重新计算。
+  Future<Map<String, dynamic>> retentionStats({int days = 14, DateTime? at}) {
+    if (at != null) return _readRetention(days, at);
+    final now = DateTime.now();
+    return _retentionCache.putIfAbsent((
+      dayKey(now),
+      days,
+    ), () => _readRetention(days, now));
   }
 
-  /// 学习柱图与持久度历史：以当前学习计划内的卡片为回看范围。
+  Future<Map<String, dynamic>> _readRetention(int days, DateTime now) async {
+    final start = DateTime(now.year, now.month, now.day - days);
+    final reviews = await db.rows(
+      "SELECT reviewed_at, grade, payload FROM reviews WHERE kind='formal' AND reviewed_at>=? AND reviewed_at<=?",
+      [start.millisecondsSinceEpoch, now.millisecondsSinceEpoch],
+    );
+    final cards = await db.rows(
+      "SELECT c.deck_id, c.payload card_payload FROM cards c JOIN decks d ON d.id=c.deck_id WHERE c.plan='active' AND json_extract(c.payload,'\$.state') IS NOT NULL AND json_extract(c.payload,'\$.lastReview') IS NOT NULL",
+    );
+    final decks = await db.rows('SELECT id, payload FROM decks');
+    final input = (
+      now: now,
+      days: days,
+      reviews: reviews,
+      cards: cards,
+      decks: decks,
+    );
+    // 空图只需生成日期和零值，不为它启动后台 isolate。
+    return cards.isEmpty && reviews.isEmpty
+        ? calculateRetention(input)
+        : compute(calculateRetention, input);
+  }
+
   Future<List<LearningBucket>> learningStatistics({
     StatisticsPeriod period = StatisticsPeriod.day,
     DateTime? at,
-  }) async {
-    final now = at ?? DateTime.now();
-    final past = switch (period) {
-      StatisticsPeriod.day => 14,
-      StatisticsPeriod.week => 8,
-      StatisticsPeriod.month => 5,
-    };
-    final future = switch (period) {
-      StatisticsPeriod.day => 15,
-      StatisticsPeriod.week => 8,
-      StatisticsPeriod.month => 5,
-    };
-    final buckets = [
-      for (var i = -past; i <= future; i++)
-        LearningBucket(period.start(now, i), period.start(now, i + 1)),
-    ];
+  }) {
+    if (at != null) return _readLearning(period, at);
+    final now = DateTime.now();
+    return _learningCache.putIfAbsent((
+      dayKey(now),
+      period,
+    ), () => _readLearning(period, now));
+  }
+
+  Future<List<LearningBucket>> _readLearning(
+    StatisticsPeriod period,
+    DateTime now,
+  ) async {
     final reviews = await db.rows(
       'SELECT card_id, reviewed_at, grade, kind, elapsed_ms, payload FROM reviews WHERE reviewed_at<=? ORDER BY reviewed_at,rowid',
       [now.millisecondsSinceEpoch],
     );
-    final formal = <String, List<Map<String, dynamic>>>{};
-    for (final row in reviews) {
-      final time = DateTime.fromMillisecondsSinceEpoch(
-        row['reviewed_at'] as int,
-      );
-      final log = decodeObject(row['payload']);
-      if (row['kind'] == 'formal') {
-        formal.putIfAbsent(row['card_id'] as String, () => []).add({
-          ...log,
-          'time': time,
-        });
-      }
-      final bucket = buckets
-          .where((b) => !time.isBefore(b.start) && time.isBefore(b.end))
-          .firstOrNull;
-      if (bucket == null) continue;
-      bucket.elapsedMs += row['elapsed_ms'] as int;
-      if (row['kind'] != 'formal') continue;
-      bucket.grades[(row['grade'] as int) - 1]++;
-      if (((log['interval_days'] as num?) ?? 0) == 0) {
-        bucket.newCards++;
-      } else {
-        bucket.reviewCards++;
-      }
-    }
-    final rows = await db.rows(
-      "SELECT c.payload card_payload, d.payload deck_payload FROM cards c JOIN decks d ON d.id=c.deck_id WHERE c.plan IN ('active','paused')",
+    final cards = await db.rows(
+      "SELECT c.deck_id, c.payload card_payload FROM cards c JOIN decks d ON d.id=c.deck_id WHERE c.plan IN ('active','paused')",
     );
-    for (final row in rows) {
-      final card = StudyCard.fromJson(decodeObject(row['card_payload']));
-      final deck = DeckData.fromJson(decodeObject(row['deck_payload']));
-      final history = formal[card.id] ?? [];
-      final enrolled = card.enrolledAt ?? card.createdAt;
-      for (final b in buckets) {
-        if (card.plan == 'active' && card.dueAt != null) {
-          final due = card.dueAt!.isBefore(dayStart(now))
-              ? dayStart(now)
-              : card.dueAt!;
-          if (!due.isBefore(b.start) && due.isBefore(b.end)) b.pending++;
-        }
-        if (b.start.isAfter(now) || !enrolled.isBefore(b.end)) continue;
-        b.enrolled++;
-        // 当前分组用当前排期；过去分组用该分组结束前的最后一次状态。
-        final current = !now.isBefore(b.start) && now.isBefore(b.end);
-        final log = history
-            .where((r) => (r['time'] as DateTime).isBefore(b.end))
-            .lastOrNull;
-        double? interval;
-        if (current && card.lastReview != null && card.dueAt != null) {
-          interval =
-              card.dueAt!.difference(card.lastReview!).inMilliseconds /
-              Duration.millisecondsPerDay;
-        } else if (log != null && log['scheduled_interval_days'] != null) {
-          interval = (log['scheduled_interval_days'] as num).toDouble();
-        } else {
-          final stateJson =
-              log?['sr_state_after'] as String? ??
-              (card.lastReview != null && card.lastReview!.isBefore(b.end)
-                  ? card.state
-                  : null);
-          if (stateJson != null) {
-            final state = MmxState.fromJsonString(stateJson);
-            interval = algorithm(
-              deck,
-              state.version,
-            ).nextInterval(state.stability).toDouble();
-          } else if (card.firstLearned != null &&
-              card.firstLearned!.isBefore(b.end)) {
-            for (var i = 0; i < 4; i++) {
-              b.durability[i] = null;
-            }
-          }
-        }
-        if (interval != null) {
-          for (var i = 0; i < 4; i++) {
-            if (interval >= [10, 30, 60, 90][i] && b.durability[i] != null) {
-              b.durability[i] = b.durability[i]! + 1;
-            }
-          }
-        }
-      }
-    }
-    return buckets;
+    final decks = await db.rows('SELECT id, payload FROM decks');
+    final input = (
+      now: now,
+      period: period,
+      reviews: reviews,
+      cards: cards,
+      decks: decks,
+    );
+    return cards.isEmpty && reviews.isEmpty
+        ? calculateLearning(input)
+        : compute(calculateLearning, input);
   }
 
   /// 复习评分统计：返回各评级的数量
@@ -1162,6 +1069,9 @@ class AppStore extends ChangeNotifier {
 
   /// 四套考试牌组共用一份按单词去重的词库，每副牌组仍列出自己的完整词表。
   Future<void> _ensureOfficialDecks() async {
+    if (await setting('officialLibraryVersion') == officialLibraryVersion) {
+      return;
+    }
     var changedDecks = false;
     final oldIds = officialDecks.map((deck) => deck.id).toList();
     final oldCount =
@@ -1211,18 +1121,34 @@ class AppStore extends ChangeNotifier {
           announce: false,
         );
       }
-      await db.transaction(() async {
+      await db.batch((batch) {
         for (final key in missing) {
           final id = 'official_$key';
-          await putCard(
-            StudyCard(
-              id: id,
-              deckId: officialLibraryDeckId,
-              source: library.cards[key]!,
-              algorithm: preferences.defaultAlgorithm,
-            ),
-            announce: false,
-            plainText: library.cards[key]!.replaceAll('---', '答案'),
+          final card = StudyCard(
+            id: id,
+            deckId: officialLibraryDeckId,
+            source: library.cards[key]!,
+            algorithm: preferences.defaultAlgorithm,
+          );
+          batch.customStatement(
+            'INSERT INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+            [
+              card.id,
+              card.deckId,
+              card.source,
+              card.source.replaceAll('---', '答案'),
+              card.chapter,
+              jsonEncode(card.tags),
+              card.plan,
+              null,
+              card.createdAt.millisecondsSinceEpoch,
+              null,
+              jsonEncode(card.toJson()),
+            ],
+          );
+          batch.customStatement(
+            'INSERT OR IGNORE INTO card_decks VALUES (?,?)',
+            [id, officialLibraryDeckId],
           );
           byKey[key] = id;
         }
@@ -1264,9 +1190,9 @@ class AppStore extends ChangeNotifier {
           .toSet();
       final absent = wanted.difference(linked);
       if (absent.isEmpty) continue;
-      await db.transaction(() async {
+      await db.batch((batch) {
         for (final id in absent) {
-          await db.customStatement(
+          batch.customStatement(
             'INSERT OR IGNORE INTO card_decks VALUES (?,?)',
             [id, official.id],
           );
@@ -1274,6 +1200,7 @@ class AppStore extends ChangeNotifier {
       });
       changedDecks = true;
     }
+    await setSetting('officialLibraryVersion', officialLibraryVersion);
     if (changedDecks) changed();
   }
 

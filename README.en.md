@@ -12,7 +12,7 @@
   <img src="assets/badges/license.svg" height="20" alt="MIT">
 </p>
 
-**Offline-first open-source flashcard app**. Organize knowledge with Markji syntax, select cards to join the plan, then complete daily reviews and new learning with MMX scheduling.
+**Offline-first open-source flashcard app**. Write cards in text to organize knowledge, add them to your study plan, then complete daily reviews and new learning with MMX scheduling.
 
 ![App overview: complete flow from import to review](assets/design-en.svg)
 
@@ -22,7 +22,7 @@ Memory requires spaced repetition, but manual scheduling is too tedious. OpenMar
 
 ## Core Features
 
-**Four card types**: Q&A, cloze deletion, LaTeX formulas, answer lines. Write cards in plain text; automatic Markji syntax parsing:
+**Text-based card creation**: Q&A, cloze deletion, and LaTeX formulas, with an answer line separating the question from its answer. Add headings, styles, and formulas using card syntax:
 
 ```text
 [P#H1#Calculus · Fundamentals]
@@ -88,7 +88,7 @@ Scheduling intervals use actual time differences between formal reviews; same-da
 ## Project Structure
 
 - `lib/data/`: Database, study sessions, backup, platform connections
-- `lib/content/`: Markji syntax parsing and card cutting
+- `lib/content/`: Card syntax parsing and text splitting
 - `lib/domain/`: Decks, cards, queues, and preferences
 - `lib/ui/`: Theme, Dock, pages, and content renderer
 - `lib/algorithms/`: MMX core algorithms

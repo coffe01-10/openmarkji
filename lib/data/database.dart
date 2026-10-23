@@ -6,7 +6,7 @@ import 'connection.dart';
 class AppDatabase extends GeneratedDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? openConnection());
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
   @override
   Iterable<TableInfo<Table, Object?>> get allTables => const [];
   @override
@@ -20,6 +20,8 @@ class AppDatabase extends GeneratedDatabase {
         'CREATE INDEX cards_deck ON cards(deck_id, chapter)',
         'CREATE INDEX cards_due ON cards(plan, due_at)',
         'CREATE INDEX cards_new ON cards(deck_id, plan, first_learned, enrolled_at)',
+        'CREATE INDEX cards_learning ON cards(plan, first_learned, enrolled_at)',
+        'CREATE INDEX cards_first_learned ON cards(first_learned)',
         'CREATE TABLE reviews (id TEXT PRIMARY KEY, card_id TEXT NOT NULL, deck_id TEXT NOT NULL, reviewed_at INTEGER NOT NULL, grade INTEGER NOT NULL, kind TEXT NOT NULL, elapsed_ms INTEGER NOT NULL, payload TEXT NOT NULL)',
         'CREATE INDEX reviews_card ON reviews(card_id, reviewed_at)',
         'CREATE INDEX reviews_day ON reviews(kind, reviewed_at)',
@@ -38,6 +40,14 @@ class AppDatabase extends GeneratedDatabase {
         );
         await customStatement(
           'CREATE INDEX IF NOT EXISTS card_decks_deck ON card_decks(deck_id, card_id)',
+        );
+      }
+      if (from < 3) {
+        await customStatement(
+          'CREATE INDEX cards_learning ON cards(plan, first_learned, enrolled_at)',
+        );
+        await customStatement(
+          'CREATE INDEX cards_first_learned ON cards(first_learned)',
         );
       }
     },
