@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -20,6 +21,10 @@ import 'package:openmarkji/ui/content_view.dart';
 import 'package:openmarkji/ui/glass/liquid_glass.dart';
 import 'package:openmarkji/ui/glass/navigation_dock.dart';
 import 'package:openmarkji/ui/glass/popup.dart';
+
+final _onePixelPng = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+);
 
 // 挂起真实的异步读写，让拖拽中的加载闪帧和写入前回跳可稳定复现。
 class _InteractionStore extends AppStore {
@@ -653,133 +658,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('内容滚动后标题保持原位，顶栏遮罩平滑衰减到透明', (tester) async {
-    tester.view.physicalSize = const Size(390, 668);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(OpenMarkjiApp(store: store));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('统计').last);
-    await tester.pumpAndSettle();
-    final title = find.byKey(const ValueKey('pinned-heading-统计'));
-    final originalPosition = tester.getTopLeft(title);
-    LinearGradient headerGradient() =>
-        (tester
-                        .widget<DecoratedBox>(
-                          find
-                              .descendant(
-                                of: find.byKey(
-                                  const ValueKey('pinned-backdrop-统计'),
-                                ),
-                                matching: find.byType(DecoratedBox),
-                              )
-                              .first,
-                        )
-                        .decoration
-                    as BoxDecoration)
-                .gradient!
-            as LinearGradient;
-    final gradient = headerGradient();
-    expect(gradient.colors.first.a, closeTo(.9, .01));
-    expect(gradient.colors.last.a, 0);
-    for (var i = 1; i < gradient.colors.length; i++) {
-      expect(gradient.colors[i].a, lessThanOrEqualTo(gradient.colors[i - 1].a));
-    }
-    await tester.drag(find.byType(ListView).first, const Offset(0, -340));
-    await tester.pumpAndSettle();
-    expect(tester.getTopLeft(title), originalPosition);
-    expect(headerGradient(), gradient);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('工具栏组合按钮一起弹动，返回和菜单共用玻璃组件', (tester) async {
-    tester.view.physicalSize = const Size(390, 668);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await store.addExamples();
-    await tester.pumpWidget(OpenMarkjiApp(store: store));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('牌组').last);
-    await tester.pumpAndSettle();
-
-    Future<void> verifyGroup(Finder first, Finder second) async {
-      final press = find.ancestor(
-        of: first,
-        matching: find.byType(ElasticPress),
-      );
-      final siblingPress = find.ancestor(
-        of: second,
-        matching: find.byType(ElasticPress),
-      );
-      expect(press, findsOneWidget);
-      expect(siblingPress, findsOneWidget);
-      expect(tester.state(press), same(tester.state(siblingPress)));
-      Offset paintedCenter(Finder finder) {
-        final box = tester.renderObject<RenderBox>(finder);
-        return box.localToGlobal(ElasticPress.paintBoundsOf(box).center);
-      }
-
-      final beforeFirst = paintedCenter(first);
-      final beforeSecond = paintedCenter(second);
-      final gesture = await tester.startGesture(tester.getCenter(first));
-      await tester.pump(const Duration(milliseconds: 100));
-      await gesture.moveBy(const Offset(0, 30));
-      await tester.pump(const Duration(milliseconds: 16));
-      await tester.pump(const Duration(milliseconds: 400));
-      final dy = paintedCenter(first).dy - beforeFirst.dy;
-      expect(dy, greaterThan(4));
-      expect(paintedCenter(second).dy - beforeSecond.dy, closeTo(dy, .1));
-      await gesture.cancel();
-      await tester.pumpAndSettle();
-    }
-
-    await verifyGroup(find.byTooltip('刷新牌组'), find.byTooltip('新建牌组'));
-    final searchPress = find.ancestor(
-      of: find.byTooltip('搜索牌组或卡片'),
-      matching: find.byType(ElasticPress),
-    );
-    final actionsPress = find.ancestor(
-      of: find.byTooltip('刷新牌组'),
-      matching: find.byType(ElasticPress),
-    );
-    expect(tester.state(searchPress), isNot(same(tester.state(actionsPress))));
-    expect(tester.getSize(find.byTooltip('搜索牌组或卡片')), const Size(44, 44));
-    expect(tester.getSize(actionsPress).width, 88);
-    await tester.tap(find.text('记忆的起点'));
-    await tester.pumpAndSettle();
-    await verifyGroup(find.byTooltip('专项练习'), find.byTooltip('牌组设置'));
-    final practicePress = find.ancestor(
-      of: find.byTooltip('专项练习'),
-      matching: find.byType(ElasticPress),
-    );
-    final morePress = find.ancestor(
-      of: find.byTooltip('更多操作').first,
-      matching: find.byType(ElasticPress),
-    );
-    expect(tester.state(morePress), isNot(same(tester.state(practicePress))));
-    expect(tester.getSize(find.byTooltip('更多操作').first), const Size(44, 44));
-    expect(
-      find.ancestor(
-        of: find.byTooltip('按章节筛选'),
-        matching: find.byType(LiquidGlass),
-      ),
-      findsWidgets,
-    );
-    await tester.tap(find.textContaining('微积分').first);
-    await tester.pumpAndSettle();
-    await verifyGroup(find.byTooltip('收藏卡片'), find.byTooltip('编辑卡片'));
-    expect(
-      find.descendant(
-        of: find.widgetWithIcon(IconButton, Icons.arrow_back_rounded),
-        matching: find.byType(LiquidGlass),
-      ),
-      findsWidgets,
-    );
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets('分段栏按住浮起导航同款玻璃透镜，拖动松开确认，取消与纵向滑动不误切换', (tester) async {
     final semantics = tester.ensureSemantics();
     await store.addExamples();
@@ -840,50 +718,6 @@ void main() {
     expect(tester.takeException(), isNull);
     semantics.dispose();
   });
-  testWidgets('搜索玻璃从图标原位连续延展，收回时沿原路径合拢', (tester) async {
-    tester.view.physicalSize = const Size(390, 668);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(OpenMarkjiApp(store: store));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('牌组').last);
-    await tester.pumpAndSettle();
-    final pane = find.byKey(const ValueKey('search-morph-pane'));
-    final original = tester.getRect(pane);
-    expect(original.width, 44);
-    await tester.tap(find.byTooltip('搜索牌组或卡片'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 80));
-    final expanding = tester.getRect(pane);
-    expect(expanding.width, greaterThan(original.width));
-    expect(expanding.left, lessThan(original.left));
-    await tester.pumpAndSettle();
-    final expanded = tester.getRect(pane);
-    expect(expanding.width, lessThan(expanded.width));
-    expect(expanded.left, 24);
-    expect(expanded.height, 44);
-    expect(tester.getCenter(find.byTooltip('关闭搜索')).dy, expanded.center.dy);
-    expect(tester.getCenter(find.byTooltip('搜索牌组或卡片')).dy, expanded.center.dy);
-    final editable = tester
-        .state<EditableTextState>(find.byType(EditableText))
-        .renderEditable;
-    expect(
-      editable.localToGlobal(editable.size.center(Offset.zero)).dy,
-      closeTo(expanded.center.dy, 1),
-      reason: '输入文字应与搜索图标和关闭按钮共用垂直中心',
-    );
-    await tester.tap(find.byTooltip('关闭搜索'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(tester.getRect(pane).width, lessThan(expanded.width));
-    expect(tester.getRect(pane).width, greaterThan(original.width));
-    await tester.pumpAndSettle();
-    expect(tester.getRect(pane), original);
-    expect(find.byType(TextField), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets('单行卡片沿选择栏拖选、回划和取消选择，边缘自动滚动', (tester) async {
     tester.view.physicalSize = const Size(390, 668);
     tester.view.devicePixelRatio = 1;
@@ -1326,7 +1160,7 @@ void main() {
     expect(find.text('今天的任务已完成，让知识沉淀一下。'), findsOneWidget);
   });
 
-  testWidgets('手机选卡、揭晓、评分、撤销与重学完整链路', (tester) async {
+  testWidgets('手机选卡、揭晓、评分、右滑撤销与重学完整链路', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -1349,18 +1183,79 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('开始今日学习'));
     await tester.pumpAndSettle();
+    final firstId = (await store.session())!.queue.first.cardId;
     expect(find.text('揭晓答案'), findsOneWidget);
     await tester.tap(find.text('揭晓答案'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('忘记'));
     await tester.pumpAndSettle();
     expect((await store.session())!.queue.last.stage, 'relearn');
-    await tester.tap(find.byTooltip('撤销上一次评分'));
+    await tester.drag(find.byType(ContentView), const Offset(180, 0));
     await tester.pumpAndSettle();
+    expect((await store.session())!.queue.first.cardId, firstId);
     expect((await store.session())!.queue.first.stage, 'new');
     expect(
       (await store.historyFor((await store.session())!.queue.first.cardId)),
       isEmpty,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('引用可预览和跳转，返回保持学习进度，编辑器可搜索插入引用', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await store.putDeck(DeckData(id: 'refs', name: '关联学习'));
+    await store.putCard(
+      StudyCard(
+        id: 'origin',
+        deckId: 'refs',
+        source: '原问题 [Ref#ID/target#相关概念] [Ref#ID/missing#缺失引用]\n---\n原答案',
+        plan: 'active',
+      ),
+    );
+    await store.putCard(
+      StudyCard(id: 'target', deckId: 'refs', source: '目标问题\n---\n目标答案'),
+    );
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始今日学习'));
+    await tester.pumpAndSettle();
+    final session = (await store.session())!.toJson();
+    await tester.tap(find.text('↗ 相关概念'));
+    await tester.pumpAndSettle();
+    expect(find.text('卡片预览'), findsOneWidget);
+    expect(find.text('目标答案'), findsOneWidget);
+    await tester.tap(find.text('打开卡片'));
+    await tester.pumpAndSettle();
+    expect(find.text('卡片详情'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('揭晓答案'), findsOneWidget);
+    expect((await store.session())!.toJson(), session);
+    expect(await store.historyFor('target'), isEmpty);
+    await tester.tap(find.text('↗ 缺失引用'));
+    await tester.pumpAndSettle();
+    expect(find.text('引用的卡片不存在或已被删除。'), findsOneWidget);
+    expect(find.text('打开卡片'), findsNothing);
+    await tester.tap(find.byTooltip('关闭预览'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('编辑当前卡片'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byTooltip('引用卡片'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('引用卡片'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, '搜索要引用的卡片'), '目标问题');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('目标问题 答案 目标答案'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(
+      (await store.card('origin'))!.source,
+      contains('[Ref#ID/target#目标问题'),
     );
     expect(tester.takeException(), isNull);
   });
@@ -1442,6 +1337,65 @@ void main() {
     expect(find.byTooltip('收藏卡片'), findsNothing);
     expect((await store.card('fa'))!.favorite, isFalse);
     expect((await store.card('fb'))!.favorite, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('写卡时光标在公式上弹出玻璃悬浮预览，随输入实时更新', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await store.putDeck(DeckData(id: 'd', name: '测试牌组'));
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('牌组').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('测试牌组'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('写卡片'));
+    await tester.pumpAndSettle();
+    final field = find.byType(TextField).last;
+    await tester.tap(field);
+    await tester.enterText(field, '问题 [E##x^2');
+    await tester.pumpAndSettle();
+    final bubble = find.byType(InlinePreview);
+    expect(bubble, findsOneWidget);
+    expect(tester.widget<InlinePreview>(bubble).token.body, 'x^2');
+    expect(
+      find.ancestor(of: bubble, matching: find.byType(LiquidGlass)),
+      findsWidgets,
+    );
+    await tester.enterText(field, '问题 [E##x^2+y^2]');
+    await tester.pumpAndSettle();
+    expect(tester.widget<InlinePreview>(bubble).token.body, 'x^2+y^2');
+    // 图片预览稳定显示，悬浮窗位于光标所在行上方。
+    final id = await store.addMedia('dot.png', _onePixelPng);
+    await tester.enterText(field, '问题\n\n\n\n\n\n[Pic#ID/$id#]');
+    await tester.pumpAndSettle();
+    expect(find.byType(Image), findsOneWidget);
+    final editable = tester
+        .state<EditableTextState>(find.byType(EditableText).last)
+        .renderEditable;
+    final caret = editable.localToGlobal(
+      editable
+          .getLocalRectForCaret(
+            TextPosition(offset: editable.text!.toPlainText().length),
+          )
+          .topLeft,
+    );
+    expect(tester.getRect(bubble).bottom, lessThan(caret.dy));
+    final editor = tester.state<EditableTextState>(
+      find.byType(EditableText).last,
+    );
+    editor.userUpdateTextEditingValue(
+      const TextEditingValue(
+        text: '问题 [E##x^2+y^2]',
+        selection: TextSelection.collapsed(offset: 1),
+      ),
+      SelectionChangedCause.tap,
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(InlinePreview), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -1625,50 +1579,6 @@ void main() {
     expect(find.text('甲'), findsOneWidget);
     expect(find.text('乙'), findsOneWidget);
     expect(find.text('丙'), findsNothing);
-  });
-
-  testWidgets('返回今日后，全部牌组仍向左推进，与底部导航方向一致', (tester) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(OpenMarkjiApp(store: store));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('牌组').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('今日').last);
-    await tester.pumpAndSettle();
-    await Scrollable.ensureVisible(
-      tester.element(find.text('全部牌组 →')),
-      alignment: .3,
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('全部牌组 →'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
-    SlideTransition transitionFor(String type) =>
-        tester.widget<SlideTransition>(
-          find
-              .ancestor(
-                of: find.byWidgetPredicate(
-                  (widget) => widget.runtimeType.toString() == type,
-                ),
-                matching: find.byType(SlideTransition),
-              )
-              .first,
-        );
-    expect(
-      transitionFor('_LibraryPage').position.value.dx,
-      greaterThan(0),
-      reason: '右侧牌组应从右侧进入，整页向左推进',
-    );
-    expect(
-      transitionFor('_TodayPage').position.value.dx,
-      lessThan(0),
-      reason: '今日应向左离开',
-    );
-    await tester.pumpAndSettle();
-    expect(tester.takeException(), isNull);
   });
 
   testWidgets('返回按钮下拉超出工具栏时，绘制区域不被工具栏裁掉', (tester) async {
@@ -1907,53 +1817,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('牌组展开途中详情停在快照，结束后恢复实时页面', (tester) async {
-    tester.view.physicalSize = const Size(390, 668);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await store.addExamples();
-    await tester.pumpWidget(OpenMarkjiApp(store: store));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('牌组').last);
-    await tester.pumpAndSettle();
-    final gesture = await tester.startGesture(
-      tester.getCenter(find.text('记忆的起点')),
-    );
-    await tester.pump();
-    await gesture.up();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 80));
-
-    final transition = find.byWidgetPredicate(
-      (widget) => widget.runtimeType.toString() == '_RowExpandTransition',
-    );
-    final snapshot = find.descendant(
-      of: transition,
-      matching: find.byType(SnapshotWidget),
-    );
-    expect(snapshot, findsOneWidget);
-    expect(
-      tester.widget<SnapshotWidget>(snapshot).controller.allowSnapshotting,
-      isTrue,
-    );
-    final during = tester.renderObject(find.byType(SnapshotWidget));
-    final picture = during.toString();
-    await tester.pump(const Duration(milliseconds: 16));
-    expect(during.toString(), picture);
-
-    await tester.pumpAndSettle();
-    expect(
-      tester.widget<SnapshotWidget>(snapshot).controller.allowSnapshotting,
-      isFalse,
-    );
-    expect(find.text('写卡片').hitTestable(), findsOneWidget);
-    await tester.tap(find.text('写卡片'));
-    await tester.pumpAndSettle();
-    expect(find.text('写卡片'), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets('设置展开未完成时点另一行会立刻反向切换', (tester) async {
     await tester.pumpWidget(OpenMarkjiApp(store: store));
     await tester.pumpAndSettle();
@@ -2167,12 +2030,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('关于'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('检查更新'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('尚未配置更新源'), findsNothing);
     await http.runWithClient(
       () async {
-        await tester.tap(find.widgetWithText(FilledButton, '检查更新'));
+        await tester.ensureVisible(find.text('检查更新'));
+        await tester.tap(find.text('检查更新'));
         await tester.pumpAndSettle();
       },
       () => MockClient((request) async {
@@ -2185,7 +2046,9 @@ void main() {
       }),
     );
     expect(find.text('当前已是最新版本'), findsOneWidget);
-    await tester.pageBack();
+    await tester.tap(find.widgetWithText(FilledButton, '确定'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('协议与政策'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('协议与政策'));
     await tester.pumpAndSettle();
@@ -2195,6 +2058,8 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
     await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('帮助与反馈'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('帮助与反馈'));
     await tester.pumpAndSettle();

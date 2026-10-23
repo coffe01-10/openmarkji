@@ -233,11 +233,13 @@ class _LibraryCardResults extends StatefulWidget {
     required this.search,
     required this.group,
     required this.revision,
+    this.onSelected,
   });
   final AppStore store;
   final String search;
   final String? group;
   final int revision;
+  final ValueChanged<StudyCard>? onSelected;
 
   @override
   State<_LibraryCardResults> createState() => _LibraryCardResultsState();
@@ -331,10 +333,15 @@ class _LibraryCardResultsState extends State<_LibraryCardResults> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () => _push(
-                        context,
-                        _CardPage(store: widget.store, cardId: hit.card.id),
-                      ),
+                      onTap: () => widget.onSelected != null
+                          ? widget.onSelected!(hit.card)
+                          : _push(
+                              context,
+                              _CardPage(
+                                store: widget.store,
+                                cardId: hit.card.id,
+                              ),
+                            ),
                     ),
                   ),
                 );

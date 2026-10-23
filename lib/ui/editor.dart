@@ -22,6 +22,10 @@ class _EditorPageState extends State<_EditorPage> {
   );
   late String _chapter = widget.card?.chapter ?? widget.chapter;
   bool _preview = false, _saving = false, _ready = false, _saved = false;
+  final _sourceFocus = FocusNode();
+  final _fieldStack = GlobalKey();
+  InlineToken? _token;
+  Rect? _caret;
   Timer? _draftTimer;
   Future<void> _draftWrite = Future.value();
   String get _key => 'draft:${widget.card?.id ?? widget.deck.id}';
@@ -31,6 +35,131 @@ class _EditorPageState extends State<_EditorPage> {
     _restoreDraft();
     _source.addListener(_edited);
     _tags.addListener(_edited);
+    _source.addListener(_track);
+    _sourceFocus.addListener(_track);
+  }
+
+  /// 光标在公式或图片语法上时，记录语法与光标位置，供悬浮预览定位。
+  void _track() {
+    final s = _source.selection;
+    final token = _sourceFocus.hasFocus && s.isValid && s.isCollapsed
+        ? inlineTokenAt(_source.text, s.baseOffset)
+        : null;
+    if (token == null) {
+      if (_token != null && mounted) {
+        setState(() {
+          _token = null;
+          _caret = null;
+        });
+      }
+      return;
+    }
+    _token = token;
+    // 新文本布局完成后才能取得光标坐标。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _token == null) return;
+      final caret = _caretRect();
+      if (caret != _caret) setState(() => _caret = caret);
+    });
+    if (mounted) setState(() {});
+  }
+
+  Rect? _caretRect() {
+    final stack = _fieldStack.currentContext?.findRenderObject() as RenderBox?;
+    if (stack == null || !stack.attached) return null;
+    RenderEditable? editable;
+    void visit(RenderObject o) {
+      if (editable != null) return;
+      if (o is RenderEditable) {
+        editable = o;
+      } else {
+        o.visitChildren(visit);
+      }
+    }
+
+    stack.visitChildren(visit);
+    final e = editable;
+    if (e == null || !e.hasSize) return null;
+    final offset = _source.selection.baseOffset.clamp(0, _source.text.length);
+    final local = e.getLocalRectForCaret(TextPosition(offset: offset));
+    final origin = stack.globalToLocal(e.localToGlobal(local.topLeft));
+    final rect = origin & local.size;
+    final visible = Offset.zero & stack.size;
+    return visible.contains(rect.center) ? rect : null;
+  }
+
+  /// 光标上方的玻璃悬浮窗，不拦截输入手势；上方被标题栏挡住时才放到下方。
+  Widget _inlineBubble(BoxConstraints box) {
+    final token = _token, caret = _caret;
+    final show = token != null && caret != null;
+    final r = caret ?? Rect.zero;
+    final stack = _fieldStack.currentContext?.findRenderObject() as RenderBox?;
+    final top = stack != null && stack.attached
+        ? stack.localToGlobal(Offset.zero).dy
+        : 0.0;
+    final roomAbove =
+        top + r.top - MediaQuery.paddingOf(context).top - kToolbarHeight;
+    final below =
+        roomAbove < (token?.tag == 'Pic' ? 210 : 120) &&
+        r.bottom + 210 < box.maxHeight;
+    final x = box.maxWidth <= 0 ? 0.0 : (r.left / box.maxWidth) * 2 - 1;
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: below ? r.bottom + 6 : null,
+      bottom: below ? null : box.maxHeight - r.top + 6,
+      child: IgnorePointer(
+        child: Align(
+          alignment: Alignment(x.clamp(-1.0, 1.0), below ? -1 : 1),
+          child: AnimatedOpacity(
+            opacity: show ? 1 : 0,
+            duration: _duration(context, 160),
+            child: AnimatedScale(
+              scale: show ? 1 : .94,
+              alignment: below ? Alignment.topCenter : Alignment.bottomCenter,
+              duration: _duration(context, 200),
+              curve: Curves.easeOutCubic,
+              child: !show
+                  ? const SizedBox.shrink()
+                  : ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minWidth: 120,
+                        maxWidth: 360,
+                        maxHeight: 190,
+                      ),
+                      child: _GlassSurface(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                token.tag == 'E' ? '公式预览' : '图片预览',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Flexible(
+                                child: InlinePreview(
+                                  token: token,
+                                  store: widget.store,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _restoreDraft() async {
@@ -73,7 +202,9 @@ class _EditorPageState extends State<_EditorPage> {
   void dispose() {
     _draftTimer?.cancel();
     _source.removeListener(_edited);
+    _source.removeListener(_track);
     _tags.removeListener(_edited);
+    _sourceFocus.dispose();
     _source.dispose();
     _tags.dispose();
     super.dispose();
@@ -93,6 +224,29 @@ class _EditorPageState extends State<_EditorPage> {
         extentOffset: start + prefix.length + selected.length,
       ),
     );
+    // 工具栏按钮和文件选择会让输入框失焦，插入后回到输入框以显示悬浮预览。
+    // Web 端重新聚焦时浏览器会把光标重置到开头，下一帧再恢复插入后的选区。
+    final value = _source.value;
+    _sourceFocus.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _source.text == value.text) _source.value = value;
+    });
+  }
+
+  Future<void> _insertReference() async {
+    final card = await showModalBottomSheet<StudyCard>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _ReferencePicker(store: widget.store),
+    );
+    if (card != null && mounted) {
+      _insert(
+        '[Ref#ID/${card.id}#',
+        ']',
+        escapeMarkji(_short(card.source, 36)),
+      );
+    }
   }
 
   Future<void> _save() async {
@@ -212,16 +366,28 @@ class _EditorPageState extends State<_EditorPage> {
         Expanded(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-            child: TextField(
-              controller: _source,
-              expands: true,
-              minLines: null,
-              maxLines: null,
-              textAlignVertical: TextAlignVertical.top,
-              keyboardType: TextInputType.multiline,
-              style: const TextStyle(fontSize: 16, height: 1.8),
-              decoration: const InputDecoration(
-                hintText: '[P#H1#知识点标题]\n你想记住的问题是什么？\n---\n在这里写下答案。',
+            child: LayoutBuilder(
+              builder: (context, box) => Stack(
+                key: _fieldStack,
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: TextField(
+                      controller: _source,
+                      focusNode: _sourceFocus,
+                      expands: true,
+                      minLines: null,
+                      maxLines: null,
+                      textAlignVertical: TextAlignVertical.top,
+                      keyboardType: TextInputType.multiline,
+                      style: const TextStyle(fontSize: 16, height: 1.8),
+                      decoration: const InputDecoration(
+                        hintText: '[P#H1#知识点标题]\n你想记住的问题是什么？\n---\n在这里写下答案。',
+                      ),
+                    ),
+                  ),
+                  _inlineBubble(box),
+                ],
               ),
             ),
           ),
@@ -365,6 +531,11 @@ class _EditorPageState extends State<_EditorPage> {
                       icon: const Icon(Icons.add_photo_alternate_outlined),
                     ),
                     IconButton(
+                      tooltip: '引用卡片',
+                      onPressed: _insertReference,
+                      icon: const Icon(Icons.link_rounded),
+                    ),
+                    IconButton(
                       tooltip: '语法帮助',
                       onPressed: () => showModalBottomSheet(
                         context: context,
@@ -373,7 +544,7 @@ class _EditorPageState extends State<_EditorPage> {
                             padding: EdgeInsets.all(24),
                             child: SingleChildScrollView(
                               child: SelectableText(
-                                '常用卡片语法\n\n[T#B#加粗]\n[T#!!fff59d#高亮]\n[F#1#挖空答案]\n[P#H1#标题]\n[E##x^2+y^2=z^2]\n---（独立一行分隔答案）\n\n同编号的挖空一起揭晓。普通中括号写成 \\[ 和 \\]。图片通过工具栏插入；未支持的语法会保留原文。',
+                                '常用卡片语法\n\n[T#B#加粗]\n[T#!!fff59d#高亮]\n[F#1#挖空答案]\n[P#H1#标题]\n[E##x^2+y^2=z^2]\n[Ref#ID/卡片ID#显示文字]\n---（独立一行分隔答案）\n\n同编号的挖空一起揭晓。普通中括号写成 \\[ 和 \\]。图片和卡片引用可通过工具栏插入；点击引用先预览，再打开详情。未支持的语法会保留原文。',
                                 style: TextStyle(height: 1.8),
                               ),
                             ),
@@ -391,6 +562,71 @@ class _EditorPageState extends State<_EditorPage> {
       ),
     );
   }
+}
+
+class _ReferencePicker extends StatefulWidget {
+  const _ReferencePicker({required this.store});
+  final AppStore store;
+
+  @override
+  State<_ReferencePicker> createState() => _ReferencePickerState();
+}
+
+class _ReferencePickerState extends State<_ReferencePicker> {
+  String _search = '';
+
+  @override
+  Widget build(BuildContext context) => FractionallySizedBox(
+    heightFactor: .85,
+    child: SafeArea(
+      top: false,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 16, 12),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    '引用卡片',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '关闭选卡',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: _GlassSearchField(
+              hint: '搜索要引用的卡片',
+              onChanged: (value) => setState(() => _search = value.trim()),
+            ),
+          ),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                  sliver: _LibraryCardResults(
+                    store: widget.store,
+                    search: _search,
+                    group: null,
+                    revision: widget.store.revision,
+                    onSelected: (card) => Navigator.pop(context, card),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 Future<void> _saveBytes(String name, Uint8List bytes) async {

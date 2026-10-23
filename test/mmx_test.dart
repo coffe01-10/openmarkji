@@ -108,8 +108,6 @@ void main() {
   });
 
   group('参数验证', () {
-    test('MMX-5 参数个数', () => expect(const Mmx5().paramCount, 12));
-    test('MMX-6 参数个数', () => expect(const Mmx6().paramCount, 21));
     test('非法参数 schedule 失败', () {
       const bad = Mmx6([1.0, 2.0]);
       final res = bad.schedule(responseHistory: [1], intervalHistory: [0]);

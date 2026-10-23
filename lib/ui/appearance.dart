@@ -44,7 +44,7 @@ class _AppearancePageState extends State<_AppearancePage> {
   }
 
   void _refresh() {
-    if (mounted) setState(() {});
+    setState(() {});
   }
 
   void _save(void Function(Preferences) update) => _action(context, () async {

@@ -437,7 +437,7 @@ class _GlassSearchFieldState extends State<_GlassSearchField> {
   }
 
   void _refresh() {
-    if (mounted) setState(() {});
+    setState(() {});
   }
 
   @override
@@ -587,19 +587,11 @@ class _BrandMark extends StatelessWidget {
   final double size;
   @override
   Widget build(BuildContext context) {
-    final c = Theme.of(context).colorScheme;
-    return Container(
+    return Image.asset(
+      'assets/logo/app_icon.png',
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        color: c.primary,
-        borderRadius: BorderRadius.circular(size * .32),
-      ),
-      child: Icon(
-        Icons.auto_awesome_mosaic_rounded,
-        size: size * .58,
-        color: c.onPrimary,
-      ),
+      semanticLabel: 'OpenMarkji 应用图标',
     );
   }
 }
@@ -805,22 +797,14 @@ class _Panel extends StatelessWidget {
 }
 
 class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.title, {this.trailing});
+  const _SectionLabel(this.title);
   final String title;
-  final Widget? trailing;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(top: 28, bottom: 14),
-    child: Row(
-      children: [
-        Expanded(
-          child: Text(
-            title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-          ),
-        ),
-        ?trailing,
-      ],
+    child: Text(
+      title,
+      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
     ),
   );
 }

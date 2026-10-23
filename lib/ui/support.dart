@@ -2,72 +2,213 @@ part of 'app.dart';
 
 class _AboutPage extends StatelessWidget {
   const _AboutPage();
+
+  void _licenses(BuildContext context) => showLicensePage(
+    context: context,
+    applicationName: 'OpenMarkji',
+    applicationVersion: appDisplayVersion,
+  );
+
   @override
-  Widget build(BuildContext context) => _SettingsDetail(
-    title: '关于',
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 28),
-          child: Column(
-            children: [
-              Icon(
-                Icons.auto_stories_rounded,
-                size: 54,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'OpenMarkji',
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 6),
-              const Text('$appDisplayVersion · 离线记忆，慢慢积累'),
-            ],
-          ),
-        ),
-        _AppearanceCard(
-          child: Column(
-            children: [
-              _supportTile(
-                Icons.system_update_alt_rounded,
-                '检查更新',
-                () => _push(context, const _UpdatePage()),
-                subtitle: '当前版本 $appDisplayVersion',
-              ),
-              _supportTile(
-                Icons.verified_user_outlined,
-                '协议与政策',
-                () => _push(context, const _PoliciesPage()),
-              ),
-              _supportTile(
-                Icons.help_outline_rounded,
-                '帮助与反馈',
-                () => _push(context, const _HelpPage()),
-              ),
-              _supportTile(
-                Icons.code_rounded,
-                '开源许可',
-                () => showLicensePage(
-                  context: context,
-                  applicationName: 'OpenMarkji',
-                  applicationVersion: appDisplayVersion,
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return _SettingsDetail(
+      title: '关于',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+            child: Column(
+              children: [
+                const _BrandMark(size: 96),
+                const SizedBox(height: 20),
+                const Text(
+                  'OpenMarkji',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -.5,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _AboutPill(
+                      label: 'v$appDisplayVersion',
+                      background: colors.primary,
+                      foreground: colors.onPrimary,
+                    ),
+                    _AboutPill(
+                      label: 'GPL-3.0',
+                      background: colors.surfaceContainerLowest,
+                      foreground: colors.onSurfaceVariant,
+                      onTap: () => _licenses(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '离线优先的开源记忆卡片。\n编写、回忆、复习，让知识慢慢积累。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 15,
+                    height: 1.5,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _GlassGroup(
+                  pill: true,
+                  child: TextButton.icon(
+                    style: TextButton.styleFrom(
+                      foregroundColor: colors.onSurface,
+                      minimumSize: const Size(156, 48),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                    ),
+                    onPressed: () => showGlassDialog<void>(
+                      context: context,
+                      builder: (_) => const _UpdateDialog(),
+                    ),
+                    icon: const Icon(Icons.sync_rounded, size: 20),
+                    label: const Text(
+                      '检查更新',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+            child: Text(
+              '更多',
+              style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant),
+            ),
+          ),
+          _AppearanceCard(
+            child: Column(
+              children: [
+                _AboutEntry(
+                  icon: Icons.code_rounded,
+                  title: '项目主页',
+                  external: true,
+                  onTap: () => _action(context, () async {
+                    await launchUrl(
+                      Uri.parse('https://github.com/coffe01-10/openmarkji'),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  }),
+                ),
+                const Divider(height: 1, indent: 72, endIndent: 16),
+                _AboutEntry(
+                  icon: Icons.verified_user_outlined,
+                  title: '协议与政策',
+                  onTap: () => _push(context, const _PoliciesPage()),
+                ),
+                const Divider(height: 1, indent: 72, endIndent: 16),
+                _AboutEntry(
+                  icon: Icons.help_outline_rounded,
+                  title: '帮助与反馈',
+                  onTap: () => _push(context, const _HelpPage()),
+                ),
+                const Divider(height: 1, indent: 72, endIndent: 16),
+                _AboutEntry(
+                  icon: Icons.balance_rounded,
+                  title: '开源许可',
+                  onTap: () => _licenses(context),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AboutPill extends StatelessWidget {
+  const _AboutPill({
+    required this.label,
+    required this.background,
+    required this.foreground,
+    this.onTap,
+  });
+  final String label;
+  final Color background, foreground;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: background,
+    shape: const StadiumBorder(),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: onTap,
+      customBorder: const StadiumBorder(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: foreground,
           ),
         ),
-        const Padding(
-          padding: EdgeInsets.all(20),
-          child: Text(
-            '无需账号，本地保存。\n编写卡片、安排学习，让知识慢慢积累。',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, height: 1.8),
-          ),
-        ),
-      ],
+      ),
     ),
+  );
+}
+
+class _AboutEntry extends StatelessWidget {
+  const _AboutEntry({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.external = false,
+  });
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+  final bool external;
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    leading: Container(
+      width: 40,
+      height: 40,
+      decoration: ShapeDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHigh,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+      child: Icon(
+        icon,
+        size: 20,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+    ),
+    title: Text(title),
+    trailing: Icon(
+      external ? Icons.open_in_new_rounded : Icons.chevron_right_rounded,
+      size: 20,
+    ),
+    onTap: onTap,
   );
 }
 
@@ -84,13 +225,13 @@ Widget _supportTile(
   onTap: onTap,
 );
 
-class _UpdatePage extends StatefulWidget {
-  const _UpdatePage();
+class _UpdateDialog extends StatefulWidget {
+  const _UpdateDialog();
   @override
-  State<_UpdatePage> createState() => _UpdatePageState();
+  State<_UpdateDialog> createState() => _UpdateDialogState();
 }
 
-class _UpdatePageState extends State<_UpdatePage> {
+class _UpdateDialogState extends State<_UpdateDialog> {
   bool _checking = false;
   final _installer = AppUpdateInstaller();
   bool _downloading = false, _installing = false, _cancelling = false;
@@ -101,6 +242,12 @@ class _UpdatePageState extends State<_UpdatePage> {
       ? '此构建尚未配置更新源，暂时无法在线检查。'
       : '点击下方按钮检查新版本。';
   AppRelease? _release;
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
   @override
   void dispose() {
     _installer.cancel();
@@ -184,6 +331,7 @@ class _UpdatePageState extends State<_UpdatePage> {
     }
     setState(() {
       _checking = true;
+      _message = '正在检查新版本…';
       _release = null;
       _downloadedPath = null;
     });
@@ -206,100 +354,121 @@ class _UpdatePageState extends State<_UpdatePage> {
   }
 
   @override
-  Widget build(BuildContext context) => _SettingsDetail(
-    title: '检查更新',
-    child: _AppearanceCard(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Icon(
-              Icons.system_update_alt_rounded,
-              size: 44,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(height: 18),
-            const Text(
-              'OpenMarkji $appDisplayVersion',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              _message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(height: 1.6),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              _installer.supported
-                  ? '发现新版本后，可在这里直接下载安装。'
-                  : 'Android 版支持应用内下载安装；网页版刷新后使用最新构建。',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, height: 1.6),
-            ),
-            if (_release?.notes.isNotEmpty ?? false)
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: Text(_release!.notes),
-              ),
-            const SizedBox(height: 24),
-            if (_downloading) ...[
-              LinearProgressIndicator(
-                value: _total != null && _total! > 0
-                    ? _received / _total!
-                    : null,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _total != null && _total! > 0
-                    ? '${(_received / _total! * 100).toStringAsFixed(0)}% · ${(_received / 1048576).toStringAsFixed(1)} / ${(_total! / 1048576).toStringAsFixed(1)} MB'
-                    : '已下载 ${(_received / 1048576).toStringAsFixed(1)} MB',
-                textAlign: TextAlign.center,
-              ),
-              TextButton(
-                onPressed: _cancelling
-                    ? null
-                    : () {
-                        setState(() {
-                          _cancelling = true;
-                          _message = '正在取消下载…';
-                        });
-                        _installer.cancel();
-                      },
-                child: Text(_cancelling ? '正在取消…' : '取消下载'),
-              ),
-            ] else if (_checking || _installing)
-              const LinearProgressIndicator()
-            else
-              FilledButton(onPressed: _check, child: const Text('检查更新')),
-            if ((_release?.isNewer ?? false) &&
-                !_downloading &&
-                !_installing &&
-                !_checking)
-              if (_installer.supported) ...[
-                const SizedBox(height: 8),
-                FilledButton.icon(
-                  onPressed: _downloadedPath == null ? _download : _install,
-                  icon: Icon(
-                    _downloadedPath == null
-                        ? Icons.download_rounded
-                        : Icons.system_update_rounded,
-                  ),
-                  label: Text(_downloadedPath == null ? '下载并安装更新' : '立即安装'),
+  Widget build(BuildContext context) {
+    final newer = _release?.isNewer ?? false;
+    final offerInstall = newer && _installer.supported;
+    final busy = _checking || _downloading || _installing;
+    final label = _checking
+        ? '检查中…'
+        : _downloading
+        ? '下载中…'
+        : _installing
+        ? '正在安装…'
+        : offerInstall
+        ? (_downloadedPath == null ? '下载更新' : '立即安装')
+        : _release == null
+        ? '重新检查'
+        : '确定';
+    final colors = Theme.of(context).colorScheme;
+    final glass = LiquidGlassScope.of(context);
+    return GlassAlertDialog(
+      title: const Text('检查更新'),
+      content: SizedBox(
+        width: 288,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(_message, style: const TextStyle(height: 1.6)),
+              if (newer && (_release?.notes.isNotEmpty ?? false)) ...[
+                const SizedBox(height: 16),
+                Text(_release!.notes, style: const TextStyle(height: 1.6)),
+              ],
+              if (_downloading) ...[
+                const SizedBox(height: 20),
+                LinearProgressIndicator(
+                  value: _total != null && _total! > 0
+                      ? _received / _total!
+                      : null,
                 ),
                 const SizedBox(height: 12),
+                Text(
+                  _total != null && _total! > 0
+                      ? '${(_received / _total! * 100).toStringAsFixed(0)}% · ${(_received / 1048576).toStringAsFixed(1)} / ${(_total! / 1048576).toStringAsFixed(1)} MB'
+                      : '已下载 ${(_received / 1048576).toStringAsFixed(1)} MB',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ] else if (_checking || _installing) ...[
+                const SizedBox(height: 20),
+                const LinearProgressIndicator(),
+              ],
+              if (offerInstall) ...[
+                const SizedBox(height: 16),
                 const Text(
-                  '安装时可能需要允许本应用安装更新，随后由系统确认安装。',
+                  '首次安装更新可能需要授权，随后由系统确认安装。',
+                  style: TextStyle(fontSize: 12, height: 1.6),
+                ),
+              ] else if (newer) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Android 版支持应用内下载安装；网页版刷新后使用最新构建。',
                   style: TextStyle(fontSize: 12, height: 1.6),
                 ),
               ],
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
+      actions: [
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.tonal(
+                onPressed: _installing || _cancelling
+                    ? null
+                    : () {
+                        if (_downloading) {
+                          setState(() {
+                            _cancelling = true;
+                            _message = '正在取消下载…';
+                          });
+                          _installer.cancel();
+                        } else {
+                          Navigator.pop(context);
+                        }
+                      },
+                style: FilledButton.styleFrom(
+                  shape: const StadiumBorder(),
+                  minimumSize: const Size(0, 48),
+                  backgroundColor: glass ? glassFillOf(colors) : null,
+                  foregroundColor: colors.onSurface,
+                ),
+                child: Text(_downloading ? '取消下载' : '取消'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton(
+                onPressed: busy
+                    ? null
+                    : offerInstall
+                    ? (_downloadedPath == null ? _download : _install)
+                    : _release == null
+                    ? _check
+                    : () => Navigator.pop(context),
+                style: FilledButton.styleFrom(
+                  shape: const StadiumBorder(),
+                  minimumSize: const Size(0, 48),
+                ),
+                child: Text(label, textAlign: TextAlign.center),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 }
 
 class _PoliciesPage extends StatelessWidget {

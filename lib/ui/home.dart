@@ -216,13 +216,7 @@ class _TodayPage extends StatelessWidget {
                   ),
                 ],
               ),
-              _SectionLabel(
-                '我的学习空间',
-                trailing: TextButton(
-                  onPressed: onLibrary,
-                  child: const Text('全部牌组 →'),
-                ),
-              ),
+              const _SectionLabel('我的学习空间'),
               _Load(
                 future: store.decks(),
                 builder: (decks) => decks.isEmpty

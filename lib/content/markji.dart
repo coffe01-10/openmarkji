@@ -126,7 +126,7 @@ class MarkjiParser {
       final tag = header[1]!;
       final params = header[2]!.isEmpty ? <String>[] : header[2]!.split(',');
       final raw = source.substring(contentStart, end);
-      if (!{'T', 'P', 'F', 'E', 'Pic'}.contains(tag)) {
+      if (!{'T', 'P', 'F', 'E', 'Pic', 'Ref', 'Card'}.contains(tag)) {
         issues.add(ContentIssue(base + pos, '$tag 暂不支持交互，已保留源码'));
         nodes.add(
           ContentNode(
@@ -165,6 +165,61 @@ class MarkjiParser {
 
 String escapeMarkji(String text) =>
     text.replaceAll('[', r'\[').replaceAll(']', r'\]');
+
+/// 光标所在（或刚写完）的公式、图片语法；[end] 为结束中括号之后的位置。
+typedef InlineToken = ({
+  String tag,
+  String body,
+  List<String> params,
+  int start,
+  int end,
+  bool closed,
+});
+
+final _inlineHeader = RegExp(r'\[(E|Pic)#([^\n#]*)#');
+
+/// 写卡时给悬浮预览用：光标落在语法内部或紧跟其后时返回该语法。
+/// 公式尚未写结束中括号时，按到行尾的内容实时预览。
+InlineToken? inlineTokenAt(String source, int cursor) {
+  for (final m in _inlineHeader.allMatches(source)) {
+    if (m.start > cursor) break;
+    var slashes = 0;
+    while (m.start - slashes > 0 && source[m.start - slashes - 1] == '\\') {
+      slashes++;
+    }
+    if (slashes.isOdd) continue;
+    var end = m.end, depth = 1;
+    while (end < source.length) {
+      final ch = source[end];
+      if (ch == '\\' &&
+          end + 1 < source.length &&
+          '[]'.contains(source[end + 1])) {
+        end += 2;
+        continue;
+      }
+      if (ch == '[') depth++;
+      if (ch == ']' && --depth == 0) break;
+      end++;
+    }
+    final closed = depth == 0;
+    if (!closed) {
+      if (m[1] != 'E') continue;
+      final line = source.indexOf('\n', m.end);
+      end = line < 0 ? source.length : line;
+    }
+    final after = closed ? end + 1 : end;
+    if (cursor <= m.start || cursor > after) continue;
+    return (
+      tag: m[1]!,
+      body: source.substring(m.end, end),
+      params: m[2]!.isEmpty ? const <String>[] : m[2]!.split(','),
+      start: m.start,
+      end: after,
+      closed: closed,
+    );
+  }
+  return null;
+}
 
 /// 外部纯文本中独占一行的 --- 会被当成答案线，导入时改成普通文字。
 String escapeImportText(String text) => escapeAnswerLines(escapeMarkji(text));

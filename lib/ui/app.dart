@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart'
     show
+        RenderEditable,
         RenderSliver,
         RenderSliverFloatingPersistentHeader,
         FloatingHeaderSnapConfiguration,
@@ -16,6 +17,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kPrimaryButton;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, listEquals;
+import 'package:url_launcher/url_launcher.dart';
 
 import '../algorithms/mmx.dart';
 import '../content/external_import.dart';
@@ -33,6 +35,7 @@ import '../domain/entities.dart';
 import '../domain/statistics.dart';
 import 'content_view.dart';
 import 'glass/liquid_glass.dart';
+import 'glass/dialog.dart';
 import 'glass/floating_header.dart';
 import 'glass/navigation_dock.dart';
 import 'glass/popup.dart';
@@ -190,7 +193,10 @@ class OpenMarkjiApp extends StatelessWidget {
                     : LiquidGlassQuality.ultra,
                 child: LiquidGlassHost(
                   enabled: p.liquidGlass != 'none',
-                  child: child!,
+                  child: CardReferenceScope(
+                    pageBuilder: (id) => _CardPage(store: store, cardId: id),
+                    child: child!,
+                  ),
                 ),
               ),
             ),

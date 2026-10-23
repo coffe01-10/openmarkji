@@ -12,6 +12,11 @@ void main() {
     expect(result.nodes.first.children.map((e) => e.kind), ['T', 'text', 'F']);
     expect(result.nodes.first.children.last.params, ['2']);
     expect(result.nodes.where((e) => e.kind == 'answer').length, 1);
+    final reference = parser.parse('[P##关联 [Ref#ID/card1#概念说明]]');
+    expect(reference.issues, isEmpty);
+    expect(reference.nodes.single.children.last.kind, 'Ref');
+    expect(reference.nodes.single.children.last.param('ID/'), 'card1');
+    expect(reference.plainText, '关联 概念说明\n');
   });
   test('公式换行和方括号不会变成卡片分隔', () {
     const text =
@@ -73,5 +78,25 @@ void main() {
       answerDelimiter: '答案：',
     );
     expect(result.single, '\\[问题\\]\n---\n\\[答案\\]');
+  });
+
+  test('写卡悬浮预览识别光标处的公式与图片', () {
+    const src = r'前文 [E##x^2] 中间 [Pic#ID/m1#] [T#B#粗]';
+    final formula = inlineTokenAt(src, src.indexOf('x^2') + 1)!;
+    expect((formula.tag, formula.body, formula.closed), ('E', 'x^2', true));
+    // 刚输入完结束中括号时光标紧跟其后，仍显示预览。
+    expect(inlineTokenAt(src, src.indexOf(']') + 1)?.tag, 'E');
+    expect(inlineTokenAt(src, src.indexOf(']') + 2), isNull);
+    expect(inlineTokenAt(src, src.indexOf('m1'))?.params, ['ID/m1']);
+    expect(inlineTokenAt(src, src.indexOf('粗')), isNull);
+    expect(inlineTokenAt(src, 0), isNull);
+    // 未闭合的公式按到行尾的内容实时预览。
+    const open = '[E##\\frac{a}{b}\n下一行';
+    final typing = inlineTokenAt(open, 8)!;
+    expect((typing.body, typing.closed), (r'\frac{a}{b}', false));
+    expect(inlineTokenAt(open, open.length), isNull);
+    // 嵌套中括号与转义的语法头。
+    expect(inlineTokenAt(r'[E##\sqrt[3]{x}]', 6)?.body, r'\sqrt[3]{x}');
+    expect(inlineTokenAt(r'\[E##x]', 5), isNull);
   });
 }

@@ -71,6 +71,7 @@ flutter:
   shaders:
     - shaders/liquid_glass.frag
   assets:
+    - assets/logo/app_icon.png
     - third_party/GPL-3.0/LICENSE
     - assets/vocabulary/
 

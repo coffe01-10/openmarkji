@@ -333,9 +333,7 @@ class _RowExpandRoute extends PageRoute<void> {
         controller.status.isAnimating &&
         controller.value > 0 &&
         controller.value < 1;
-    if (_snapshot.allowSnapshotting != moving) {
-      _snapshot.allowSnapshotting = moving;
-    }
+    _snapshot.allowSnapshotting = moving;
   }
 
   /// 上一段动画的方向。中途被反向打断时，曲线要沿用打断前的方向，
@@ -599,7 +597,7 @@ class _StudyPrefsPageState extends State<_StudyPrefsPage> {
   }
 
   void _refresh() {
-    if (mounted) setState(() {});
+    setState(() {});
   }
 
   @override

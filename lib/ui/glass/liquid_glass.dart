@@ -83,6 +83,12 @@ class LiquidGlassScope extends InheritedWidget {
     LiquidGlassStyle.menu(Theme.of(context).colorScheme),
   );
 
+  static LiquidGlassStyle alertStyleOf(BuildContext context) =>
+      _materialStyleOf(
+        context,
+        LiquidGlassStyle.alert(Theme.of(context).colorScheme),
+      );
+
   static LiquidGlassStyle _materialStyleOf(
     BuildContext context,
     LiquidGlassStyle base,

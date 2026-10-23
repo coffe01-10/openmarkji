@@ -8,6 +8,22 @@ import 'package:url_launcher/url_launcher.dart';
 import '../content/markji.dart';
 import '../data/app_store.dart';
 
+class CardReferenceScope extends InheritedWidget {
+  const CardReferenceScope({
+    super.key,
+    required this.pageBuilder,
+    required super.child,
+  });
+  final Widget Function(String id) pageBuilder;
+
+  static CardReferenceScope? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<CardReferenceScope>();
+
+  @override
+  bool updateShouldNotify(CardReferenceScope oldWidget) =>
+      pageBuilder != oldWidget.pageBuilder;
+}
+
 class ContentView extends StatefulWidget {
   const ContentView({
     super.key,
@@ -39,6 +55,103 @@ class _ContentViewState extends State<ContentView> {
       _groups.clear();
     }
     if (old.revealed && !widget.revealed) _groups.clear();
+  }
+
+  Future<void> _reference(ContentNode node) async {
+    final id = node.param('ID/');
+    final scope = CardReferenceScope.of(context);
+    final target = id == null || id.isEmpty
+        ? Future.value(null)
+        : widget.store.card(id);
+    final open = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheet) => FractionallySizedBox(
+        heightFactor: .72,
+        child: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.link_rounded),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        '卡片预览',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: '关闭预览',
+                      onPressed: () => Navigator.pop(sheet),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: FutureBuilder(
+                    future: target,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final card = snapshot.data;
+                      if (snapshot.hasError || card == null) {
+                        return Center(
+                          child: Text(
+                            snapshot.hasError
+                                ? '无法读取引用的卡片，请关闭后重试。'
+                                : '引用的卡片不存在或已被删除。',
+                          ),
+                        );
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: ContentView(
+                                source: card.source,
+                                store: widget.store,
+                              ),
+                            ),
+                          ),
+                          if (scope != null) ...[
+                            const SizedBox(height: 16),
+                            FilledButton.icon(
+                              onPressed: () => Navigator.pop(sheet, true),
+                              icon: const Icon(Icons.open_in_new_rounded),
+                              label: const Text('打开卡片'),
+                            ),
+                          ],
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (open == true && mounted) {
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          settings: const RouteSettings(name: '卡片详情'),
+          builder: (_) => scope!.pageBuilder(id!),
+        ),
+      );
+    }
   }
 
   @override
@@ -182,6 +295,29 @@ class _ContentViewState extends State<ContentView> {
 
   InlineSpan _span(ContentNode n) {
     final colors = Theme.of(context).colorScheme;
+    if (n.kind == 'Ref' || n.kind == 'Card') {
+      return WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Tooltip(
+          message: '预览引用卡片',
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: widget.interactive ? () => _reference(n) : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Text(
+                '↗ ${n.text.isEmpty ? '引用卡片' : n.text}',
+                style: TextStyle(
+                  fontSize: widget.store.preferences.fontSize,
+                  color: colors.primary,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     if (n.kind == 'F') {
       final group = n.params.firstOrNull ?? '1';
       final visible = widget.revealed || _groups.contains(group);
@@ -367,4 +503,103 @@ class _MediaImageState extends State<_MediaImage> {
       },
     ),
   );
+}
+
+/// 写卡悬浮窗中的单个公式或图片预览，随源码实时重绘。
+class InlinePreview extends StatelessWidget {
+  const InlinePreview({super.key, required this.token, required this.store});
+  final InlineToken token;
+  final AppStore store;
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).colorScheme;
+    if (token.tag == 'Pic') {
+      final id = token.params
+          .firstWhere((p) => p.startsWith('ID/'), orElse: () => 'ID/')
+          .substring(3);
+      return _InlineImage(key: ValueKey(id), id: id, store: store);
+    }
+    final hint = TextStyle(fontSize: 13, color: c.onSurfaceVariant);
+    if (token.body.trim().isEmpty) return Text('输入公式后在这里预览', style: hint);
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Math.tex(
+        token.body,
+        mathStyle: MathStyle.display,
+        textStyle: TextStyle(
+          fontSize: store.preferences.fontSize + 2,
+          color: c.onSurface,
+        ),
+        onErrorFallback: (_) => Text('公式尚未完整', style: hint),
+      ),
+    );
+  }
+}
+
+/// 悬浮窗用的紧凑图片：固定高度，加载与重新读取时保留上一张，避免闪烁。
+class _InlineImage extends StatefulWidget {
+  const _InlineImage({super.key, required this.id, required this.store});
+  final String id;
+  final AppStore store;
+  @override
+  State<_InlineImage> createState() => _InlineImageState();
+}
+
+class _InlineImageState extends State<_InlineImage> {
+  Uint8List? _bytes;
+  bool _loaded = false;
+  int _revision = -1;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _reload();
+  }
+
+  @override
+  void didUpdateWidget(_InlineImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _reload();
+  }
+
+  void _reload() {
+    if (_revision == widget.store.revision) return;
+    _revision = widget.store.revision;
+    final revision = _revision;
+    widget.store.media(widget.id).then((bytes) {
+      if (!mounted || revision != _revision) return;
+      setState(() {
+        _bytes = bytes;
+        _loaded = true;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).colorScheme;
+    final hint = TextStyle(fontSize: 13, color: c.onSurfaceVariant);
+    return SizedBox(
+      height: 120,
+      child: _bytes != null
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Image.memory(
+                _bytes!,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+                errorBuilder: (_, _, _) =>
+                    Center(child: Text('图片无法解码', style: hint)),
+              ),
+            )
+          : Center(
+              child: _loaded
+                  ? Text('尚未找到这张图片', style: hint)
+                  : const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+            ),
+    );
+  }
 }

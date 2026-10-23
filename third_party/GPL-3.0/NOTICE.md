@@ -31,6 +31,15 @@ it retains the same lens, pointer tracking, glow, refraction and springs.
 Text-only rows use equal spacing and support an unselected row when large
 text wraps a control. Reduced-motion mode skips spring travel.
 
+`lib/ui/glass/dialog.dart` adapts `lib/ui/dialog.dart` at the same revision:
+alert glass, rim and shadows, the 404 ms spring entry, glass-aware fading,
+fade-only dismissal, and elastic panel presses. OpenMarkji retains its own
+update/download/install workflow, connects the pane to shared appearance
+preferences, and disables route travel in reduced-motion mode.
+The about page in `lib/ui/support.dart` follows `lib/views/about.dart`'s
+96 dp logo, compact matching pills, typography, spacing and grouped links;
+content and actions are adapted to OpenMarkji.
+
 OpenMarkji's original code retains its existing license. These copied
 components are GPL-3.0, and a distributed combined application must comply
 with that license; they are not relicensed as MIT.
