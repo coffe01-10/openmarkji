@@ -155,13 +155,23 @@ enum _ProgressPhase { idle, loading, success }
 /// 保持同一块玻璃，从文字胶囊收缩为进度圆，再恢复宽度。
 class _GlassProgressButton extends StatefulWidget {
   const _GlassProgressButton({
+    super.key,
     required this.label,
-    required this.onPressed,
+    this.onPressed,
     required this.onComplete,
+    this.onIdlePressed,
+    this.idleIcon,
+    this.progressId = 'enroll',
+    this.successLabel = '已加入计划',
+    this.enabled = true,
   });
   final String label;
-  final Future<bool> Function() onPressed;
-  final VoidCallback onComplete;
+  final Future<bool> Function()? onPressed;
+  final ValueChanged<bool> onComplete;
+  final VoidCallback? onIdlePressed;
+  final IconData? idleIcon;
+  final String progressId, successLabel;
+  final bool enabled;
   @override
   State<_GlassProgressButton> createState() => _GlassProgressButtonState();
 }
@@ -177,13 +187,13 @@ class _GlassProgressButtonState extends State<_GlassProgressButton>
     super.dispose();
   }
 
-  Future<void> _run() async {
+  Future<void> run([Future<bool> Function()? action]) async {
     if (_phase != _ProgressPhase.idle) return;
     _morph.duration = _duration(context, 340);
     _morph.reverseDuration = _duration(context, 420);
     setState(() => _phase = _ProgressPhase.loading);
     try {
-      final operation = widget.onPressed();
+      final operation = (action ?? widget.onPressed!)();
       await _morph.forward().orCancel;
       final success = await operation;
       if (!mounted) return;
@@ -194,7 +204,7 @@ class _GlassProgressButtonState extends State<_GlassProgressButton>
       }
       await _morph.reverse().orCancel;
       setState(() => _phase = _ProgressPhase.idle);
-      widget.onComplete();
+      widget.onComplete(success);
     } on TickerCanceled {
       // 页面退出时随按钮一起结束反馈动画。
     }
@@ -209,13 +219,15 @@ class _GlassProgressButtonState extends State<_GlassProgressButton>
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
     )..layout();
-    final width = math.max(44.0, text.width + 32);
+    final width = widget.idleIcon == null
+        ? math.max(44.0, text.width + 32)
+        : 44.0;
     text.dispose();
     return Semantics(
       liveRegion: true,
       label: switch (_phase) {
         _ProgressPhase.loading => '正在${widget.label}',
-        _ProgressPhase.success => '已加入计划',
+        _ProgressPhase.success => widget.successLabel,
         _ => widget.label,
       },
       child: _GlassGroup(
@@ -225,11 +237,14 @@ class _GlassProgressButtonState extends State<_GlassProgressButton>
           builder: (context, child) {
             final shape = Curves.easeInOutCubic.transform(_morph.value);
             return SizedBox(
-              key: const ValueKey('enroll-progress'),
+              key: ValueKey('${widget.progressId}-progress'),
               width: width + (44 - width) * shape,
               height: 44,
               child: TextButton(
-                onPressed: _phase == _ProgressPhase.idle ? _run : null,
+                onPressed: _phase == _ProgressPhase.idle && widget.enabled
+                    ? widget.onIdlePressed ??
+                          (widget.onPressed == null ? null : run)
+                    : null,
                 style: TextButton.styleFrom(
                   padding: EdgeInsets.zero,
                   foregroundColor: c.onSurface,
@@ -244,7 +259,9 @@ class _GlassProgressButtonState extends State<_GlassProgressButton>
                       children: [
                         Opacity(
                           opacity: (1 - shape * 3).clamp(0.0, 1.0),
-                          child: Text(widget.label, style: textStyle),
+                          child: widget.idleIcon == null
+                              ? Text(widget.label, style: textStyle)
+                              : Icon(widget.idleIcon),
                         ),
                         if (_phase != _ProgressPhase.idle)
                           Opacity(
@@ -257,7 +274,9 @@ class _GlassProgressButtonState extends State<_GlassProgressButton>
                                     opacity: animation,
                                     child:
                                         child.key ==
-                                            const ValueKey('enroll-success')
+                                            ValueKey(
+                                              '${widget.progressId}-success',
+                                            )
                                         ? ScaleTransition(
                                             scale: animation.drive(
                                               Tween<double>(
@@ -275,16 +294,20 @@ class _GlassProgressButtonState extends State<_GlassProgressButton>
                                   ),
                               child: _phase == _ProgressPhase.loading
                                   ? SizedBox.square(
-                                      key: const ValueKey('enroll-loading'),
+                                      key: ValueKey(
+                                        '${widget.progressId}-loading',
+                                      ),
                                       dimension: 20,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
                                         color: c.primary,
                                       ),
                                     )
-                                  : const Icon(
+                                  : Icon(
                                       Icons.check_rounded,
-                                      key: ValueKey('enroll-success'),
+                                      key: ValueKey(
+                                        '${widget.progressId}-success',
+                                      ),
                                       size: 24,
                                     ),
                             ),
@@ -504,6 +527,7 @@ class _ActionMenu<T> extends StatelessWidget {
     this.child,
     this.tooltip = '更多操作',
     this.destructive = const {},
+    this.targetBuilder,
   });
   final Map<T, String> options;
   final ValueChanged<T> onSelected;
@@ -511,6 +535,7 @@ class _ActionMenu<T> extends StatelessWidget {
   final Widget? child;
   final String tooltip;
   final Set<T> destructive;
+  final Widget Function(VoidCallback open)? targetBuilder;
   @override
   Widget build(BuildContext context) => CommonPopupBox(
     popupBuilder: (_) => CommonPopupMenu(
@@ -524,34 +549,36 @@ class _ActionMenu<T> extends StatelessWidget {
           ),
       ],
     ),
-    targetBuilder: (open) => child == null
-        ? _GlassToolbar(
-            children: [
-              IconButton(
-                tooltip: tooltip,
-                onPressed: open,
-                icon: const Icon(Icons.more_vert_rounded),
-              ),
-            ],
-          )
-        : _GlassGroup(
-            pill: true,
-            child: Tooltip(
-              message: tooltip,
-              child: TextButton(
-                style: TextButton.styleFrom(
-                  minimumSize: const Size(44, 44),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
+    targetBuilder: (open) =>
+        targetBuilder?.call(open) ??
+        (child == null
+            ? _GlassToolbar(
+                children: [
+                  IconButton(
+                    tooltip: tooltip,
+                    onPressed: open,
+                    icon: const Icon(Icons.more_vert_rounded),
                   ),
-                  foregroundColor: Theme.of(context).colorScheme.onSurface,
+                ],
+              )
+            : _GlassGroup(
+                pill: true,
+                child: Tooltip(
+                  message: tooltip,
+                  child: TextButton(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(44, 44),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      foregroundColor: Theme.of(context).colorScheme.onSurface,
+                    ),
+                    onPressed: open,
+                    child: child!,
+                  ),
                 ),
-                onPressed: open,
-                child: child!,
-              ),
-            ),
-          ),
+              )),
   );
 }
 

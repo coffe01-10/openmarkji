@@ -50,7 +50,7 @@
 
 ### Android 安装
 
-[1.03 发布页](https://github.com/coffe01-10/openmarkji/releases/tag/v1.03)。大多数手机选择 ARM64 APK；旧设备可在发布页选择对应架构。
+[1.04 发布页](https://github.com/coffe01-10/openmarkji/releases/tag/v1.04)。大多数手机选择 ARM64 APK；旧设备可在发布页选择对应架构。安装 1.04 后，可在「设置 → 关于 → 检查更新」直接下载后续版本并打开系统安装确认，无需跳转下载页面。
 
 1. 新建牌组，导入文本或写卡片
 2. 在牌组中勾选卡片，点击"加入计划"

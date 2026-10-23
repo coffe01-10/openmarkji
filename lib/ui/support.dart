@@ -92,10 +92,91 @@ class _UpdatePage extends StatefulWidget {
 
 class _UpdatePageState extends State<_UpdatePage> {
   bool _checking = false;
+  final _installer = AppUpdateInstaller();
+  bool _downloading = false, _installing = false, _cancelling = false;
+  int _received = 0;
+  int? _total;
+  String? _downloadedPath;
   String _message = releaseFeed.isEmpty
       ? '此构建尚未配置更新源，暂时无法在线检查。'
       : '点击下方按钮检查新版本。';
   AppRelease? _release;
+  @override
+  void dispose() {
+    _installer.cancel();
+    super.dispose();
+  }
+
+  Future<void> _download() async {
+    setState(() {
+      _downloading = true;
+      _cancelling = false;
+      _received = 0;
+      _total = null;
+      _message = '正在准备安装包…';
+    });
+    try {
+      final path = await _installer.download(
+        _release!,
+        onProgress: (received, total) {
+          if (mounted) {
+            setState(() {
+              _received = received;
+              _total = total;
+              if (!_cancelling) _message = '正在下载安装包…';
+            });
+          }
+        },
+      );
+      if (!mounted) return;
+      if (_cancelling) {
+        setState(() => _message = '下载已取消，可重新下载。');
+        return;
+      }
+      setState(() {
+        _downloadedPath = path;
+        _downloading = false;
+      });
+      await _install();
+    } on UpdateDownloadCancelled {
+      if (mounted) setState(() => _message = '下载已取消，可重新下载。');
+    } catch (e, stack) {
+      DiagnosticLog.instance.error('下载更新', e, stack);
+      if (mounted) setState(() => _message = '下载失败：$e\n可点击下方按钮重试。');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _downloading = false;
+          _cancelling = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _install() async {
+    setState(() {
+      _installing = true;
+      _message = '下载完成，正在打开系统安装界面…';
+    });
+    try {
+      await _installer.install(_downloadedPath!);
+      if (mounted) {
+        setState(() => _message = '安装包已下载，请在系统安装界面确认更新。若已返回，可再次点击安装。');
+      }
+    } catch (e, stack) {
+      DiagnosticLog.instance.error('安装更新', e, stack);
+      if (mounted) {
+        setState(
+          () => _message = e is PlatformException
+              ? (e.message ?? '未能打开安装界面，可再次点击安装。')
+              : '安装失败：$e',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _installing = false);
+    }
+  }
+
   Future<void> _check() async {
     if (releaseFeed.isEmpty) {
       setState(() => _message = '此构建尚未配置更新源，暂时无法在线检查。请留意应用提供者发布的新版本。');
@@ -104,6 +185,7 @@ class _UpdatePageState extends State<_UpdatePage> {
     setState(() {
       _checking = true;
       _release = null;
+      _downloadedPath = null;
     });
     try {
       final result = await AppRelease.check(Uri.parse(releaseFeed));
@@ -113,7 +195,8 @@ class _UpdatePageState extends State<_UpdatePage> {
           _message = result.isNewer ? '发现新版本 ${result.version}' : '当前已是最新版本';
         });
       }
-    } catch (_) {
+    } catch (e, stack) {
+      DiagnosticLog.instance.error('检查更新', e, stack);
       if (mounted) {
         setState(() => _message = '检查失败，请确认网络连接后重试。');
       }
@@ -148,28 +231,70 @@ class _UpdatePageState extends State<_UpdatePage> {
               textAlign: TextAlign.center,
               style: const TextStyle(height: 1.6),
             ),
+            const SizedBox(height: 12),
+            Text(
+              _installer.supported
+                  ? '发现新版本后，可在这里直接下载安装。'
+                  : 'Android 版支持应用内下载安装；网页版刷新后使用最新构建。',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, height: 1.6),
+            ),
             if (_release?.notes.isNotEmpty ?? false)
               Padding(
                 padding: const EdgeInsets.only(top: 16),
                 child: Text(_release!.notes),
               ),
             const SizedBox(height: 24),
-            if (_checking)
+            if (_downloading) ...[
+              LinearProgressIndicator(
+                value: _total != null && _total! > 0
+                    ? _received / _total!
+                    : null,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _total != null && _total! > 0
+                    ? '${(_received / _total! * 100).toStringAsFixed(0)}% · ${(_received / 1048576).toStringAsFixed(1)} / ${(_total! / 1048576).toStringAsFixed(1)} MB'
+                    : '已下载 ${(_received / 1048576).toStringAsFixed(1)} MB',
+                textAlign: TextAlign.center,
+              ),
+              TextButton(
+                onPressed: _cancelling
+                    ? null
+                    : () {
+                        setState(() {
+                          _cancelling = true;
+                          _message = '正在取消下载…';
+                        });
+                        _installer.cancel();
+                      },
+                child: Text(_cancelling ? '正在取消…' : '取消下载'),
+              ),
+            ] else if (_checking || _installing)
               const LinearProgressIndicator()
             else
               FilledButton(onPressed: _check, child: const Text('检查更新')),
-            if (_release?.isNewer ?? false)
-              TextButton(
-                onPressed: () => _action(context, () async {
-                  if (!await launchUrl(
-                    _release!.download,
-                    mode: LaunchMode.externalApplication,
-                  )) {
-                    throw Exception('无法打开下载页面');
-                  }
-                }),
-                child: const Text('前往下载'),
-              ),
+            if ((_release?.isNewer ?? false) &&
+                !_downloading &&
+                !_installing &&
+                !_checking)
+              if (_installer.supported) ...[
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: _downloadedPath == null ? _download : _install,
+                  icon: Icon(
+                    _downloadedPath == null
+                        ? Icons.download_rounded
+                        : Icons.system_update_rounded,
+                  ),
+                  label: Text(_downloadedPath == null ? '下载并安装更新' : '立即安装'),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  '安装时可能需要允许本应用安装更新，随后由系统确认安装。',
+                  style: TextStyle(fontSize: 12, height: 1.6),
+                ),
+              ],
           ],
         ),
       ),

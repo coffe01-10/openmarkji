@@ -16,7 +16,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kPrimaryButton;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, listEquals;
-import 'package:url_launcher/url_launcher.dart';
 
 import '../algorithms/mmx.dart';
 import '../content/markji.dart';
@@ -24,6 +23,7 @@ import '../content/official_decks.dart';
 import '../data/app_store.dart';
 import '../data/diagnostics.dart';
 import '../data/app_updates.dart';
+import '../data/app_update_installer.dart';
 import '../data/webdav.dart';
 import '../data/file_export.dart' as file_export;
 import '../domain/entities.dart';

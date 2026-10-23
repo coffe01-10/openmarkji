@@ -1184,6 +1184,37 @@ void main() {
     expect(find.byKey(const ValueKey('enroll-success')), findsNothing);
     expect(find.text('取消 1'), findsOneWidget);
     expect(find.text('加入计划'), findsOneWidget);
+    observed.failBulk = false;
+    observed.bulkGate = Completer<void>();
+    final batch = find.byKey(const ValueKey('batch-progress'));
+    final batchRect = tester.getRect(batch);
+    final calls = observed.bulkCalls;
+    await tester.tap(find.byTooltip('批量操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('暂停学习'));
+    await tester.pump(const Duration(milliseconds: 140));
+    expect(observed.bulkCalls, calls, reason: '菜单收回前不能开始写入和加载');
+    expect(find.byKey(const ValueKey('batch-loading')), findsNothing);
+    await tester.pump(const Duration(milliseconds: 240));
+    await tester.pump(const Duration(milliseconds: 380));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 380));
+    expect(observed.bulkCalls, calls + 1);
+    expect(find.byType(CommonPopupMenu), findsNothing);
+    expect(find.byKey(const ValueKey('batch-loading')), findsOneWidget);
+    expect(tester.getRect(batch), batchRect);
+    await tester.tap(find.text('加入计划'));
+    await tester.pump();
+    expect(observed.bulkCalls, calls + 1, reason: '批量处理期间不能重复操作');
+    observed.bulkGate!.complete();
+    for (var i = 0; i < 24; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(find.byKey(const ValueKey('batch-success')), findsOneWidget);
+    expect(find.text('取消 1'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('全选筛选结果'), findsOneWidget);
+    expect((await store.card('enroll-1'))!.plan, 'paused');
     tester.view.physicalSize = const Size(320, 668);
     tester.platformDispatcher.textScaleFactorTestValue = 1.6;
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
@@ -1258,6 +1289,41 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getRect(actions), enlarged);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('共享卡片可开始学习，完成后返回今日不再显示继续学习', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await store.putDeck(DeckData(id: 'limited', name: '额度已用完', newLimit: 0));
+    await store.putDeck(DeckData(id: 'available', name: '还有额度', newLimit: 1));
+    await store.putCard(
+      StudyCard(
+        id: 'shared',
+        deckId: 'limited',
+        source: '共享问题\n---\n答案',
+        plan: 'active',
+      ),
+    );
+    await store.db.customStatement('INSERT INTO card_decks VALUES (?,?)', [
+      'shared',
+      'available',
+    ]);
+    await tester.pumpWidget(OpenMarkjiApp(store: store));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始今日学习'));
+    await tester.pumpAndSettle();
+    expect(find.text('揭晓答案'), findsOneWidget);
+    await tester.tap(find.text('揭晓答案'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('认识'));
+    await tester.pumpAndSettle();
+    expect(find.text('今天，也进步了一点'), findsOneWidget);
+    await tester.tap(find.text('回到今日'));
+    await tester.pumpAndSettle();
+    expect(find.text('继续学习'), findsNothing);
+    expect(find.text('今天的任务已完成，让知识沉淀一下。'), findsOneWidget);
   });
 
   testWidgets('手机选卡、揭晓、评分、撤销与重学完整链路', (tester) async {

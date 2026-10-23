@@ -684,6 +684,7 @@ class _DeckPageState extends State<_DeckPage>
   final _listKey = GlobalKey();
   final _rowsKey = GlobalKey();
   final _toolsKey = GlobalKey();
+  final _batchProgressKey = GlobalKey<_GlassProgressButtonState>();
   bool _toolsDragging = false;
   Timer? _selectionTimer;
   int? _selectionPointer;
@@ -871,6 +872,7 @@ class _DeckPageState extends State<_DeckPage>
   Future<void> _batch(String operation) async {
     final ids = _selected.toList();
     await _action(context, () async {
+      late Future<void> Function() action;
       if (operation == 'delete') {
         if (isOfficialContentDeck(widget.deckId)) return;
         if (!await _confirm(
@@ -880,7 +882,7 @@ class _DeckPageState extends State<_DeckPage>
         )) {
           return;
         }
-        await widget.store.deleteCards(ids);
+        action = () => widget.store.deleteCards(ids);
       } else if (operation == 'move') {
         final decks = await widget.store.decks();
         if (!mounted) return;
@@ -904,42 +906,47 @@ class _DeckPageState extends State<_DeckPage>
           ),
         );
         if (id == null) return;
-        await widget.store.bulkUpdate(ids, {'deckId': id, 'chapter': ''});
+        action = () =>
+            widget.store.bulkUpdate(ids, {'deckId': id, 'chapter': ''});
       } else if (operation == 'chapter') {
         final chapter = await _textPrompt(context, '移动到章节', hint: '留空表示未分类');
         if (chapter == null) return;
-        if (chapter.isNotEmpty && !_deck!.chapters.contains(chapter)) {
-          await widget.store.putDeck(
-            DeckData.fromJson({
-              ..._deck!.toJson(),
-              'chapters': [..._deck!.chapters, chapter],
-            }),
-          );
-        }
-        await widget.store.bulkUpdate(ids, {'chapter': chapter});
+        action = () async {
+          if (chapter.isNotEmpty && !_deck!.chapters.contains(chapter)) {
+            await widget.store.putDeck(
+              DeckData.fromJson({
+                ..._deck!.toJson(),
+                'chapters': [..._deck!.chapters, chapter],
+              }),
+            );
+          }
+          await widget.store.bulkUpdate(ids, {'chapter': chapter});
+        };
       } else {
-        await widget.store.bulkUpdate(ids, {'plan': operation});
+        action = () => widget.store.bulkUpdate(ids, {'plan': operation});
       }
-      if (mounted) {
-        setState(() => _selected.clear());
-        _toast(context, '已更新 ${ids.length} 张卡片');
-      }
+      if (!mounted) return;
+      // 菜单在回到圆形入口后才调用此回调，随后由入口接续加载和完成动画。
+      await _batchProgressKey.currentState!.run(() => _applySelection(action));
     });
   }
 
-  Future<bool> _enroll() async {
+  Future<bool> _enroll() => _applySelection(
+    () => widget.store.bulkUpdate(_selected.toList(), {'plan': 'active'}),
+  );
+
+  Future<bool> _applySelection(Future<void> Function() action) async {
     _endSelection();
-    final ids = _selected.toList();
     setState(() {
       _enrolling = true;
     });
     try {
-      await widget.store.bulkUpdate(ids, {'plan': 'active'});
+      await action();
       await _refreshing;
       if (!mounted) return false;
       return true;
     } catch (e, stack) {
-      DiagnosticLog.instance.error('加入计划', e, stack);
+      DiagnosticLog.instance.error('批量操作', e, stack);
       if (mounted) _toast(context, '$e');
       return false;
     }
@@ -1421,8 +1428,9 @@ class _DeckPageState extends State<_DeckPage>
                             ),
                             _GlassProgressButton(
                               label: '加入计划',
+                              enabled: !_enrolling,
                               onPressed: _enroll,
-                              onComplete: () => setState(() {
+                              onComplete: (_) => setState(() {
                                 _enrolling = false;
                               }),
                             ),
@@ -1432,6 +1440,22 @@ class _DeckPageState extends State<_DeckPage>
                               child: _ActionMenu<String>(
                                 destructive: const {'delete'},
                                 onSelected: _batch,
+                                targetBuilder: (open) => Tooltip(
+                                  message: '批量操作',
+                                  child: _GlassProgressButton(
+                                    key: _batchProgressKey,
+                                    label: '批量操作',
+                                    progressId: 'batch',
+                                    successLabel: '操作完成',
+                                    idleIcon: Icons.more_vert_rounded,
+                                    enabled: !_enrolling,
+                                    onIdlePressed: open,
+                                    onComplete: (success) => setState(() {
+                                      _enrolling = false;
+                                      if (success) _selected.clear();
+                                    }),
+                                  ),
+                                ),
                                 options: {
                                   'paused': '暂停学习',
                                   'library': '移出计划',
