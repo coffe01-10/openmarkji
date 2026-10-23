@@ -628,7 +628,7 @@ void main() {
 
     await verifyGroup(find.byTooltip('刷新牌组'), find.byTooltip('新建牌组'));
     final searchPress = find.ancestor(
-      of: find.byTooltip('搜索牌组'),
+      of: find.byTooltip('搜索牌组或卡片'),
       matching: find.byType(ElasticPress),
     );
     final actionsPress = find.ancestor(
@@ -636,7 +636,7 @@ void main() {
       matching: find.byType(ElasticPress),
     );
     expect(tester.state(searchPress), isNot(same(tester.state(actionsPress))));
-    expect(tester.getSize(find.byTooltip('搜索牌组')), const Size(44, 44));
+    expect(tester.getSize(find.byTooltip('搜索牌组或卡片')), const Size(44, 44));
     expect(tester.getSize(actionsPress).width, 88);
     await tester.tap(find.text('记忆的起点'));
     await tester.pumpAndSettle();
@@ -743,7 +743,7 @@ void main() {
     final pane = find.byKey(const ValueKey('search-morph-pane'));
     final original = tester.getRect(pane);
     expect(original.width, 44);
-    await tester.tap(find.byTooltip('搜索牌组'));
+    await tester.tap(find.byTooltip('搜索牌组或卡片'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 80));
     final expanding = tester.getRect(pane);
@@ -755,7 +755,7 @@ void main() {
     expect(expanded.left, 24);
     expect(expanded.height, 44);
     expect(tester.getCenter(find.byTooltip('关闭搜索')).dy, expanded.center.dy);
-    expect(tester.getCenter(find.byTooltip('搜索牌组')).dy, expanded.center.dy);
+    expect(tester.getCenter(find.byTooltip('搜索牌组或卡片')).dy, expanded.center.dy);
     final editable = tester
         .state<EditableTextState>(find.byType(EditableText))
         .renderEditable;
@@ -879,6 +879,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('全选筛选结果'), findsOneWidget);
     }
+    final footer = tester.getRect(find.text('全选筛选结果'));
+    await tester.drag(list, const Offset(0, -100));
+    await tester.pumpAndSettle();
+    expect(find.text('写卡片').hitTestable(), findsNothing);
+    expect(tester.getRect(find.text('全选筛选结果')), footer);
+    await tester.drag(list, const Offset(0, 35));
+    await tester.pumpAndSettle();
+    expect(find.text('写卡片').hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -1550,7 +1558,7 @@ void main() {
     await tester.tap(find.byTooltip('刷新牌组'));
     await tester.pumpAndSettle();
     expect(find.text('牌组已刷新'), findsOneWidget);
-    await tester.tap(find.byTooltip('搜索牌组'), kind: PointerDeviceKind.mouse);
+    await tester.tap(find.byTooltip('搜索牌组或卡片'), kind: PointerDeviceKind.mouse);
     await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus,
@@ -1583,13 +1591,36 @@ void main() {
     expect(find.byType(TextField), findsNothing);
     expect(title('数学'), findsOneWidget);
     expect(find.byTooltip('刷新牌组'), findsOneWidget);
-    await tester.tap(find.byTooltip('搜索牌组'));
+    await tester.tap(find.byTooltip('搜索牌组或卡片'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '数学');
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsNothing);
     expect(title('英语'), findsOneWidget);
+    await store.putCard(
+      StudyCard(
+        id: 'global-search',
+        deckId: 'a',
+        source: '如何主动回忆？\n---\n检索记忆中的答案',
+        tags: ['检索练习'],
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('搜索牌组或卡片'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '记忆中的答案');
+    await tester.pumpAndSettle();
+    expect(find.text('牌组 · 0'), findsOneWidget);
+    expect(find.text('卡片 · 1'), findsOneWidget);
+    await tester.tap(find.textContaining('如何主动回忆？'));
+    await tester.pumpAndSettle();
+    expect(find.text('卡片详情'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '检索练习');
+    await tester.pumpAndSettle();
+    expect(find.text('卡片 · 1'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -1759,7 +1790,7 @@ void main() {
     await tester.tap(find.text('牌组').last);
     await tester.pumpAndSettle();
     verifyMaterial();
-    await tester.tap(find.byTooltip('搜索牌组'));
+    await tester.tap(find.byTooltip('搜索牌组或卡片'));
     await tester.pumpAndSettle();
     verifyMaterial();
     await tester.tap(find.byTooltip('关闭搜索'));

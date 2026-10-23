@@ -14,6 +14,8 @@ import 'connection.dart';
 import 'database.dart';
 import 'statistics_compute.dart';
 
+typedef CardSearchHit = ({StudyCard card, List<String> deckNames});
+
 class AppStore extends ChangeNotifier {
   AppStore(this.db, {this.loadOfficialDecks = true});
   final AppDatabase db;
@@ -322,6 +324,38 @@ class AppStore extends ChangeNotifier {
       sql,
       args,
     )).map((r) => StudyCard.fromJson(decodeObject(r['payload']))).toList();
+  }
+
+  Future<List<CardSearchHit>> searchCards(
+    String search, {
+    String? group,
+    int limit = 60,
+  }) async {
+    var sql = r'''
+      SELECT cards.payload,
+        json_group_array(json_extract(decks.payload, '$.name')) AS deck_names
+      FROM cards
+      JOIN card_decks ON card_decks.card_id=cards.id
+      JOIN decks ON decks.id=card_decks.deck_id
+      WHERE (instr(lower(cards.search_text),lower(?))>0
+        OR instr(lower(cards.tags),lower(?))>0)
+    ''';
+    final args = <Object>[search, search];
+    if (group != null) {
+      sql += r" AND json_extract(decks.payload,'$.group')=?";
+      args.add(group);
+    }
+    sql += ' GROUP BY cards.id ORDER BY cards.rowid LIMIT ?';
+    args.add(limit);
+    return (await db.rows(sql, args))
+        .map(
+          (row) => (
+            card: StudyCard.fromJson(decodeObject(row['payload'])),
+            deckNames: (jsonDecode(row['deck_names'] as String) as List)
+                .cast<String>(),
+          ),
+        )
+        .toList();
   }
 
   Future<void> setFavorite(String id, bool favorite) async {

@@ -542,71 +542,13 @@ Future<void> _openDeckCard(
   final navigatorBox = navigator.context.findRenderObject()! as RenderBox;
   final origin = cardBox.localToGlobal(Offset.zero, ancestor: navigatorBox);
   final source = origin & cardBox.size;
-  final theme = Theme.of(context);
-  final closedColor = theme.colorScheme.surfaceContainerLow;
-  final openColor = theme.scaffoldBackgroundColor;
   return navigator.push<void>(
-    PageRouteBuilder<void>(
-      transitionDuration: _duration(context, 520),
-      reverseTransitionDuration: _duration(context, 440),
-      pageBuilder: (_, _, _) =>
-          _DeckPage(store: store, deckId: deck.id, initialDeck: deck),
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final t = Curves.easeInOutCubicEmphasized.transform(animation.value);
-        final reveal = Curves.easeOut.transform(((t - .12) / .65).clamp(0, 1));
-        final cover = (1 - t / .30).clamp(0.0, 1.0);
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final size = constraints.biggest;
-            final rect = Rect.lerp(source, Offset.zero & size, t)!;
-            return Stack(
-              children: [
-                Positioned.fromRect(
-                  rect: rect,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(24 * (1 - t)),
-                    child: ColoredBox(
-                      color: Color.lerp(closedColor, openColor, t)!,
-                      child: Stack(
-                        children: [
-                          // 详情始终按整页布局，只改变外层容器，避免逐帧换行和跳动。
-                          OverflowBox(
-                            alignment: Alignment.topLeft,
-                            minWidth: size.width,
-                            maxWidth: size.width,
-                            minHeight: size.height,
-                            maxHeight: size.height,
-                            child: Opacity(
-                              opacity: reveal,
-                              child: Transform.scale(
-                                scale: .96 + .04 * t,
-                                alignment: Alignment.topLeft,
-                                child: child,
-                              ),
-                            ),
-                          ),
-                          if (cover > 0)
-                            Positioned(
-                              left: 0,
-                              top: 0,
-                              width: source.width,
-                              height: source.height,
-                              child: IgnorePointer(
-                                child: ExcludeSemantics(
-                                  child: Opacity(opacity: cover, child: closed),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
+    _RowExpandRoute(
+      source: source,
+      closedRadius: BorderRadius.circular(24),
+      closed: closed,
+      page: _DeckPage(store: store, deckId: deck.id, initialDeck: deck),
+      transition: _duration(context, 300),
     ),
   );
 }

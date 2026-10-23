@@ -430,6 +430,22 @@ void main() {
       }),
     );
     expect((await store.cards(deckId: 'd', tag: '数学')).length, 1);
+    await store.putDeck(DeckData(id: 'shared', name: '共享资料', group: '备考'));
+    await store.db.customStatement(
+      'INSERT INTO card_decks(card_id,deck_id) VALUES (?,?)',
+      [c.id, 'shared'],
+    );
+    final matches = await store.searchCards('数学');
+    expect(matches.map((hit) => hit.card.id), [c.id]);
+    expect(matches.single.deckNames, containsAll(['学习', '共享资料']));
+    expect((await store.searchCards('数学', group: '备考')).single.card.id, c.id);
+    expect(await store.searchCards('数学', group: '其他'), isEmpty);
+    expect(
+      (await store.searchCards('知识点 9999')).single.card.source,
+      contains('9999'),
+    );
+    expect((await store.searchCards('概念', limit: 10)).length, 10);
+
     expect((await store.prepareSession(at: now)).queue, isEmpty);
     // Report timing, without an environment-dependent performance gate.
     // ignore: avoid_print

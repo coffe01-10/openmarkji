@@ -429,11 +429,12 @@ class _RowExpandTransition extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: animation,
-      builder: (context, _) {
+      child: RepaintBoundary(child: open),
+      builder: (context, openPage) {
         return LayoutBuilder(
           builder: (context, constraints) {
             if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
-              return open;
+              return openPage!;
             }
             final full = Offset.zero & constraints.biggest;
             final progress = _progress();
@@ -462,6 +463,7 @@ class _RowExpandTransition extends StatelessWidget {
                   Positioned.fromRect(
                     rect: rect,
                     child: ClipPath(
+                      clipBehavior: progress == 1 ? Clip.none : Clip.antiAlias,
                       clipper: ShapeBorderClipper(shape: shape),
                       child: ColoredBox(
                         color: _settingsCard(Theme.of(context).colorScheme),
@@ -482,7 +484,12 @@ class _RowExpandTransition extends StatelessWidget {
                                 scale: scale,
                                 child: ExcludeFocus(
                                   child: ExcludeSemantics(
-                                    child: IgnorePointer(child: closed),
+                                    child: Offstage(
+                                      offstage: fade == 1,
+                                      child: RepaintBoundary(
+                                        child: IgnorePointer(child: closed),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -495,7 +502,7 @@ class _RowExpandTransition extends StatelessWidget {
                               maxHeight: full.height,
                               child: IgnorePointer(
                                 ignoring: fade == 0,
-                                child: Opacity(opacity: fade, child: open),
+                                child: Opacity(opacity: fade, child: openPage),
                               ),
                             ),
                           ],

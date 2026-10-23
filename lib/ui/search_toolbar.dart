@@ -152,7 +152,7 @@ class _LibraryToolbarState extends State<_LibraryToolbar>
                                         widget.onChanged(value);
                                       },
                                       decoration: InputDecoration(
-                                        hintText: '搜索牌组',
+                                        hintText: '搜索牌组或卡片',
                                         filled: false,
                                         isDense: true,
                                         contentPadding: const EdgeInsets.only(
@@ -201,7 +201,7 @@ class _LibraryToolbarState extends State<_LibraryToolbar>
                             bottom: 0,
                             width: 44,
                             child: IconButton(
-                              tooltip: '搜索牌组',
+                              tooltip: '搜索牌组或卡片',
                               style: IconButton.styleFrom(
                                 foregroundColor: c.onSurface,
                                 padding: EdgeInsets.zero,
