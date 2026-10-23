@@ -194,7 +194,7 @@ class _LibraryPageState extends State<_LibraryPage> {
                   onPressed: () =>
                       _push(context, _ImportPage(store: widget.store)),
                   icon: const Icon(Icons.file_download_outlined),
-                  label: const Text('导入卡片文本'),
+                  label: const Text('导入卡片'),
                 ),
               ),
             ),
@@ -1034,6 +1034,12 @@ class _DeckPageState extends State<_DeckPage>
                   Uint8List.fromList(utf8.encode(content)),
                 );
               }
+              if (v == 'share') {
+                await _saveBytes(
+                  '${d?.name ?? 'deck'}.$deckPackageExtension',
+                  await widget.store.exportDeckPackage(widget.deckId),
+                );
+              }
               if (v == 'delete' &&
                   !isOfficialContentDeck(widget.deckId) &&
                   context.mounted &&
@@ -1044,6 +1050,7 @@ class _DeckPageState extends State<_DeckPage>
             }),
             options: {
               'chapter': '新建章节',
+              'share': '导出分享包',
               'export': '导出语法 TXT',
               'plain': '导出纯文本',
               if (!isOfficialContentDeck(widget.deckId)) 'delete': '删除牌组',

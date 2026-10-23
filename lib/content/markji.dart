@@ -165,6 +165,49 @@ class MarkjiParser {
 
 String escapeMarkji(String text) =>
     text.replaceAll('[', r'\[').replaceAll(']', r'\]');
+
+/// 外部纯文本中独占一行的 --- 会被当成答案线，导入时改成普通文字。
+String escapeImportText(String text) => escapeAnswerLines(escapeMarkji(text));
+
+String escapeAnswerLines(String text) => text.replaceAllMapped(
+  RegExp(r'^(\s*)---(\s*)$', multiLine: true),
+  (m) => '${m[1]}- - -${m[2]}',
+);
+
+/// 导入得到的一张卡：源码之外还可带标签和章节。
+class ImportEntry {
+  const ImportEntry(this.source, {this.tags = const [], this.chapter = ''});
+  final String source;
+  final List<String> tags;
+  final String chapter;
+}
+
+/// 随导入一起写入媒体库的文件；[id] 即卡片源码中 `[Pic#ID/…#]` 的引用。
+class ImportMedia {
+  const ImportMedia(this.id, this.name, this.bytes);
+  final String id, name;
+  final Uint8List bytes;
+}
+
+final _picHeader = RegExp(r'\[Pic#([^\n#]*)#');
+
+/// 卡片源码引用的媒体 ID，按出现顺序去重。
+List<String> mediaIdsIn(String source) => {
+  for (final m in _picHeader.allMatches(source))
+    for (final p in m[1]!.split(','))
+      if (p.startsWith('ID/') && p.length > 3) p.substring(3),
+}.toList();
+
+String remapMediaIds(String source, Map<String, String> ids) => ids.isEmpty
+    ? source
+    : source.replaceAllMapped(_picHeader, (m) {
+        final params = m[1]!.split(',').map((p) {
+          if (!p.startsWith('ID/')) return p;
+          final next = ids[p.substring(3)];
+          return next == null ? p : 'ID/$next';
+        });
+        return '[Pic#${params.join(',')}#';
+      });
 String decodeImportBytes(Uint8List bytes) {
   if (bytes.length >= 2 &&
       ((bytes[0] == 0xff && bytes[1] == 0xfe) ||

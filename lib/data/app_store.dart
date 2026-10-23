@@ -6,6 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 
 import '../algorithms/mmx.dart';
+import '../content/external_import.dart';
 import '../content/markji.dart';
 import '../content/official_decks.dart';
 import '../domain/entities.dart';
@@ -563,6 +564,25 @@ class AppStore extends ChangeNotifier {
     bool keepDuplicates = false,
     bool plainSource = false,
     bool announce = true,
+  }) => importEntries(
+    deckId,
+    [for (final source in sources) ImportEntry(source)],
+    chapter: chapter,
+    keepDuplicates: keepDuplicates,
+    plainSource: plainSource,
+    announce: announce,
+  );
+
+  /// 导入的卡片只进资料库。条目自带章节时优先使用，否则用 [chapter]；
+  /// 媒体按内容命名，已存在的同名媒体保持不变。
+  Future<({int added, int skipped})> importEntries(
+    String deckId,
+    List<ImportEntry> entries, {
+    String chapter = '',
+    bool keepDuplicates = false,
+    bool plainSource = false,
+    bool announce = true,
+    List<ImportMedia> media = const [],
   }) async {
     final d = (await deck(deckId))!;
     final existing = (await db.rows(
@@ -571,38 +591,110 @@ class AppStore extends ChangeNotifier {
     )).map((r) => r['source'] as String).toSet();
     var added = 0;
     var skipped = 0;
+    final chapters = [...d.chapters];
     await db.transaction(() async {
-      for (final source in sources) {
+      final used = <String>{};
+      for (final entry in entries) {
+        final source = entry.source;
         if (!keepDuplicates && existing.contains(source)) {
           skipped++;
           continue;
         }
+        final target = entry.chapter.isEmpty ? chapter : entry.chapter;
         await putCard(
           StudyCard(
             id: newId(),
             deckId: deckId,
             source: source,
-            chapter: chapter,
+            chapter: target,
+            tags: entry.tags,
             algorithm: d.algorithm,
           ),
           announce: false,
           plainText: plainSource ? source.replaceAll('---', '答案') : null,
         );
+        used.addAll(mediaIdsIn(source));
         existing.add(source);
+        if (target.isNotEmpty && !chapters.contains(target)) {
+          chapters.add(target);
+        }
         added++;
       }
-      if (chapter.isNotEmpty && !d.chapters.contains(chapter)) {
+      for (final m in media) {
+        if (!used.contains(m.id)) continue;
+        await db.customStatement('INSERT OR IGNORE INTO media VALUES (?,?,?)', [
+          m.id,
+          m.name,
+          m.bytes,
+        ]);
+      }
+      if (chapters.length != d.chapters.length) {
         await putDeck(
-          DeckData.fromJson({
-            ...d.toJson(),
-            'chapters': [...d.chapters, chapter],
-          }),
+          DeckData.fromJson({...d.toJson(), 'chapters': chapters}),
           announce: false,
         );
       }
     });
     if (announce) changed();
     return (added: added, skipped: skipped);
+  }
+
+  /// 新建牌组接收导入内容，排在现有牌组之后。
+  Future<DeckData> createDeck(
+    String name, {
+    String description = '',
+    String group = '',
+  }) async {
+    final placed = await decks();
+    final d = DeckData(
+      id: newId(),
+      name: name,
+      description: description,
+      group: group,
+      newLimit: preferences.defaultLimit,
+      algorithm: preferences.defaultAlgorithm,
+      sortOrder: placed.isEmpty
+          ? 0
+          : placed.map((deck) => deck.sortOrder).reduce(math.max) + 1,
+    );
+    await putDeck(d);
+    return d;
+  }
+
+  /// 牌组分享包：卡片源码、章节、标签和引用的图片，不含学习记录。
+  Future<Uint8List> exportDeckPackage(String deckId) async {
+    final d = await deck(deckId);
+    if (d == null) throw StateError('牌组不存在');
+    final rows = await db.rows(
+      'SELECT cards.source, cards.chapter, cards.tags FROM cards JOIN card_decks ON card_decks.card_id=cards.id WHERE card_decks.deck_id=? ORDER BY cards.rowid',
+      [deckId],
+    );
+    final cards = [
+      for (final r in rows)
+        ImportEntry(
+          r['source'] as String,
+          chapter: r['chapter'] as String,
+          tags: List<String>.from(jsonDecode(r['tags'] as String)),
+        ),
+    ];
+    final ids = {for (final c in cards) ...mediaIdsIn(c.source)};
+    final media = <String, ({String name, Uint8List bytes})>{};
+    for (final id in ids) {
+      final row = (await db.rows('SELECT name, bytes FROM media WHERE id=?', [
+        id,
+      ])).firstOrNull;
+      if (row != null) {
+        media[id] = (name: row['name'] as String, bytes: row['bytes']);
+      }
+    }
+    return encodeDeckPackage(
+      name: d.name,
+      description: d.description,
+      group: isOfficialContentDeck(deckId) ? '' : d.group,
+      chapters: d.chapters,
+      cards: cards,
+      media: media,
+    );
   }
 
   Future<StudySession?> session() async {

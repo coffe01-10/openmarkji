@@ -18,8 +18,11 @@ import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, listEquals;
 
 import '../algorithms/mmx.dart';
+import '../content/external_import.dart';
 import '../content/markji.dart';
+import '../content/table_import.dart';
 import '../content/official_decks.dart';
+import '../data/anki_import.dart';
 import '../data/app_store.dart';
 import '../data/diagnostics.dart';
 import '../data/app_updates.dart';
@@ -39,6 +42,7 @@ part 'search_toolbar.dart';
 part 'home.dart';
 part 'library.dart';
 part 'editor.dart';
+part 'import.dart';
 part 'study.dart';
 part 'settings.dart';
 part 'webdav.dart';

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:file_picker/file_picker.dart';
@@ -14,10 +16,14 @@ class ContentView extends StatefulWidget {
     this.revealed = true,
     this.interactive = true,
     this.replaceImages = false,
+    this.pendingMedia = const {},
   });
   final String source;
   final AppStore store;
   final bool revealed, interactive, replaceImages;
+
+  /// 尚未写入媒体库的图片，例如导入预览中的文件。
+  final Map<String, Uint8List> pendingMedia;
   @override
   State<ContentView> createState() => _ContentViewState();
 }
@@ -119,6 +125,7 @@ class _ContentViewState extends State<ContentView> {
             id: n.param('ID/') ?? '',
             store: widget.store,
             replace: widget.replaceImages,
+            pending: widget.pendingMedia[n.param('ID/')],
           ),
         );
       } else if (n.kind == 'P') {
@@ -275,23 +282,28 @@ class _MediaImage extends StatefulWidget {
     required this.id,
     required this.store,
     required this.replace,
+    this.pending,
   });
   final String id;
   final AppStore store;
   final bool replace;
+  final Uint8List? pending;
   @override
   State<_MediaImage> createState() => _MediaImageState();
 }
 
 class _MediaImageState extends State<_MediaImage> {
-  late var _future = widget.store.media(widget.id);
+  late var _future = _load();
+  Future<Uint8List?> _load() => widget.pending != null
+      ? Future.value(widget.pending)
+      : widget.store.media(widget.id);
   late int _revision = widget.store.revision;
   @override
   void didUpdateWidget(_MediaImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (_revision != widget.store.revision || oldWidget.id != widget.id) {
       _revision = widget.store.revision;
-      _future = widget.store.media(widget.id);
+      _future = _load();
     }
   }
 
