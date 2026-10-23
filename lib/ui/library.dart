@@ -65,7 +65,8 @@ class _LibraryPageState extends State<_LibraryPage> {
       await widget.store.decks();
       widget.store.changed();
       if (mounted) _toast(context, '牌组已刷新');
-    } catch (e) {
+    } catch (e, stack) {
+      DiagnosticLog.instance.error('刷新牌组', e, stack);
       if (mounted) _toast(context, '刷新失败：$e');
     } finally {
       if (mounted) setState(() => _refreshing = false);
@@ -576,7 +577,8 @@ Future<void> _editDeck(
                               ),
                             );
                             if (sheet.mounted) Navigator.pop(sheet);
-                          } catch (e) {
+                          } catch (e, stack) {
+                            DiagnosticLog.instance.error('牌组排序', e, stack);
                             setSheet(() {
                               error = '$e';
                               saving = false;
@@ -599,6 +601,64 @@ Future<void> _editDeck(
   });
 }
 
+class _DeckToolsSliver extends SingleChildRenderObjectWidget {
+  const _DeckToolsSliver({
+    super.key,
+    required this.vsync,
+    required this.snapConfiguration,
+    required super.child,
+  });
+
+  final TickerProvider vsync;
+  final FloatingHeaderSnapConfiguration snapConfiguration;
+
+  @override
+  _RenderDeckToolsSliver createRenderObject(BuildContext context) =>
+      _RenderDeckToolsSliver(vsync, snapConfiguration);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderDeckToolsSliver renderObject,
+  ) {
+    renderObject
+      ..vsync = vsync
+      ..snapConfiguration = snapConfiguration;
+  }
+}
+
+class _RenderDeckToolsSliver extends RenderSliverFloatingPersistentHeader {
+  _RenderDeckToolsSliver(
+    TickerProvider vsync,
+    FloatingHeaderSnapConfiguration snap,
+  ) : super(
+        vsync: vsync,
+        snapConfiguration: snap,
+        showOnScreenConfiguration: null,
+      );
+
+  @override
+  double get minExtent => maxExtent;
+  @override
+  double get maxExtent => childExtent;
+
+  @override
+  void performLayout() {
+    // 工具区由内容决定高度，整块平移，不能在收起时压缩内部控件。
+    child!.layout(constraints.asBoxConstraints(), parentUsesSize: true);
+    super.performLayout();
+  }
+
+  @override
+  void layoutChild(
+    double scrollOffset,
+    double maxExtent, {
+    bool overlapsContent = false,
+  }) {
+    // 已在 performLayout 中完成自然高度的布局，复用本次测量。
+  }
+}
+
 class _DeckPage extends StatefulWidget {
   const _DeckPage({
     super.key,
@@ -615,12 +675,16 @@ class _DeckPage extends StatefulWidget {
   State<_DeckPage> createState() => _DeckPageState();
 }
 
-class _DeckPageState extends State<_DeckPage> {
+class _DeckPageState extends State<_DeckPage>
+    with SingleTickerProviderStateMixin {
   String _search = '';
   String? _chapter, _plan, _tag, _focus;
   final _selected = <String>{};
   final _scroll = ScrollController();
   final _listKey = GlobalKey();
+  final _rowsKey = GlobalKey();
+  final _toolsKey = GlobalKey();
+  bool _toolsDragging = false;
   Timer? _selectionTimer;
   int? _selectionPointer;
   int? _selectionAnchor;
@@ -633,7 +697,6 @@ class _DeckPageState extends State<_DeckPage> {
   List<String> _tags = [];
   bool _loading = false, _more = true;
   bool _enrolling = false;
-  bool _showTools = true;
   Future<void>? _refreshing;
   int _generation = 0;
   @override
@@ -689,7 +752,8 @@ class _DeckPageState extends State<_DeckPage> {
           _loading = false;
         });
       }
-    } catch (e) {
+    } catch (e, stack) {
+      DiagnosticLog.instance.error('加载牌组卡片', e, stack);
       if (mounted && gen == _generation) {
         setState(() => _loading = false);
         _toast(context, '$e');
@@ -708,6 +772,26 @@ class _DeckPageState extends State<_DeckPage> {
 
   double get _rowExtent =>
       math.max(56, MediaQuery.textScalerOf(context).scale(14) * 1.4 + 20);
+
+  _RenderDeckToolsSliver? get _toolsRenderer =>
+      _toolsKey.currentContext?.findRenderObject() as _RenderDeckToolsSliver?;
+
+  bool _toolsScrollNotification(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    final direction = _scroll.position.userScrollDirection;
+    if (notification is ScrollStartNotification) {
+      _toolsDragging = notification.dragDetails != null;
+      _toolsRenderer?.maybeStopSnapAnimation(direction);
+    } else if (notification is UserScrollNotification &&
+        notification.direction != ScrollDirection.idle) {
+      _toolsRenderer?.updateScrollStartDirection(notification.direction);
+    } else if (notification is ScrollEndNotification) {
+      // 滚轮每一格都会发出结束通知，仅触摸拖动结束后才自动停靠。
+      if (_toolsDragging) _toolsRenderer?.maybeStartSnapAnimation(direction);
+      _toolsDragging = false;
+    }
+    return false;
+  }
 
   void _beginSelection(int index, Offset position) {
     _selectionTimer?.cancel();
@@ -747,10 +831,16 @@ class _DeckPageState extends State<_DeckPage> {
     if (anchor == null || position == null || box == null || _cards.isEmpty) {
       return;
     }
-    final index =
-        ((box.globalToLocal(position).dy + _scroll.offset - 8) / _rowExtent)
-            .floor()
-            .clamp(0, _cards.length - 1);
+    final rows = _rowsKey.currentContext?.findRenderObject() as RenderSliver?;
+    if (rows == null) return;
+    // 使用卡片 sliver 的实际坐标，浮动工具区显露时也不会选错行。
+    final local = MatrixUtils.transformPoint(
+      Matrix4.inverted(rows.getTransformTo(null)),
+      position,
+    );
+    final index = ((local.dy + rows.constraints.scrollOffset) / _rowExtent)
+        .floor()
+        .clamp(0, _cards.length - 1);
     if (_selectionEnd == index) return;
     _selectionEnd = index;
     final range = _cards
@@ -848,7 +938,8 @@ class _DeckPageState extends State<_DeckPage> {
       await _refreshing;
       if (!mounted) return false;
       return true;
-    } catch (e) {
+    } catch (e, stack) {
+      DiagnosticLog.instance.error('加入计划', e, stack);
       if (mounted) _toast(context, '$e');
       return false;
     }
@@ -957,322 +1048,345 @@ class _DeckPageState extends State<_DeckPage> {
       body: LayoutBuilder(
         builder: (context, constraints) => Column(
           children: [
-            AnimatedSize(
-              duration: _duration(context, 220),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topCenter,
-              child: ClipRect(
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  heightFactor: _showTools ? 1 : 0,
-                  child:
-                      // 键盘弹出时让筛选区可以纵向滚动，给卡片和操作底栏留出空间。
-                      Padding(
-                        padding: EdgeInsets.only(top: topInset),
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxHeight: math.max(
-                              0,
-                              constraints.maxHeight -
-                                  topInset -
-                                  56 -
-                                  MediaQuery.paddingOf(context).bottom -
-                                  _rowExtent,
-                            ),
+            Expanded(
+              child: IgnorePointer(
+                ignoring: _enrolling,
+                child: Listener(
+                  // 起始行会被懒加载列表回收，拖选的移动和松手由稳定的外层接收。
+                  onPointerMove: (event) {
+                    if (event.pointer != _selectionPointer ||
+                        _selectionAnchor == null) {
+                      return;
+                    }
+                    _selectionPosition = event.position;
+                    _paintSelection();
+                  },
+                  onPointerUp: (event) {
+                    if (event.pointer == _selectionPointer) {
+                      _endSelection();
+                    }
+                  },
+                  onPointerCancel: (event) {
+                    if (event.pointer == _selectionPointer) {
+                      _endSelection();
+                    }
+                  },
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _toolsScrollNotification,
+                    child: CustomScrollView(
+                      key: _listKey,
+                      controller: _scroll,
+                      slivers: [
+                        // 工具区跟随滚动位移，浮起时不再挤压卡片列表的视口。
+                        _DeckToolsSliver(
+                          key: _toolsKey,
+                          vsync: this,
+                          snapConfiguration: FloatingHeaderSnapConfiguration(
+                            duration: _duration(context, 260),
+                            curve: Curves.easeInOutCubic,
                           ),
-                          child: SingleChildScrollView(
+                          child: ColoredBox(
+                            color: widget.embedded
+                                ? c.surface
+                                : Theme.of(context).scaffoldBackgroundColor,
                             child: Padding(
-                              padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (d?.description.isNotEmpty ?? false)
-                                    Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: 14,
-                                      ),
-                                      child: Text(
-                                        d!.description,
-                                        style: TextStyle(
-                                          color: c.onSurfaceVariant,
-                                        ),
-                                      ),
+                              padding: EdgeInsets.only(top: topInset),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxHeight: math.max(
+                                    0,
+                                    constraints.maxHeight -
+                                        topInset -
+                                        56 -
+                                        MediaQuery.paddingOf(context).bottom -
+                                        _rowExtent,
+                                  ),
+                                ),
+                                child: SingleChildScrollView(
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      20,
+                                      8,
+                                      20,
+                                      12,
                                     ),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: _GlassChoice(
-                                          label: '写卡片',
-                                          onPressed: d == null
-                                              ? null
-                                              : () => _push(
-                                                  context,
-                                                  _EditorPage(
-                                                    store: widget.store,
-                                                    deck: d,
-                                                    chapter: _chapter ?? '',
-                                                  ),
-                                                ),
-                                          icon: Icons.add_rounded,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: _GlassChoice(
-                                          label: '导入',
-                                          onPressed: () => _push(
-                                            context,
-                                            _ImportPage(
-                                              store: widget.store,
-                                              deckId: widget.deckId,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        if (d?.description.isNotEmpty ?? false)
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              bottom: 14,
+                                            ),
+                                            child: Text(
+                                              d!.description,
+                                              style: TextStyle(
+                                                color: c.onSurfaceVariant,
+                                              ),
                                             ),
                                           ),
-                                          icon: Icons.file_download_outlined,
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: _GlassChoice(
+                                                label: '写卡片',
+                                                onPressed: d == null
+                                                    ? null
+                                                    : () => _push(
+                                                        context,
+                                                        _EditorPage(
+                                                          store: widget.store,
+                                                          deck: d,
+                                                          chapter:
+                                                              _chapter ?? '',
+                                                        ),
+                                                      ),
+                                                icon: Icons.add_rounded,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: _GlassChoice(
+                                                label: '导入',
+                                                onPressed: () => _push(
+                                                  context,
+                                                  _ImportPage(
+                                                    store: widget.store,
+                                                    deckId: widget.deckId,
+                                                  ),
+                                                ),
+                                                icon: Icons
+                                                    .file_download_outlined,
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 14),
-                                  _GlassSearchField(
-                                    onChanged: (s) =>
-                                        _filter(() => _search = s),
-                                    hint: '搜索内容或标签',
-                                    dense: true,
-                                  ),
-                                  const SizedBox(height: 10),
-                                  _GlassSegments<String?>(
-                                    options: const {
-                                      null: '全部',
-                                      'library': '未加入',
-                                      'active': '计划内',
-                                      'paused': '暂停',
-                                    },
-                                    value: _plan,
-                                    stretch: true,
-                                    onChanged: (value) =>
-                                        _filter(() => _plan = value),
-                                  ),
-                                  const SizedBox(height: 10),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    crossAxisAlignment:
-                                        WrapCrossAlignment.center,
-                                    children: [
-                                      for (final entry in const {
-                                        'favorite': '收藏',
-                                        'difficult': '难卡',
-                                      }.entries)
-                                        _GlassChoice(
-                                          icon: entry.key == 'favorite'
-                                              ? Icons.star_outline_rounded
-                                              : Icons.psychology_outlined,
-                                          label: entry.value,
-                                          selected: _focus == entry.key,
-                                          onPressed: () => _filter(
-                                            () => _focus = _focus == entry.key
-                                                ? null
-                                                : entry.key,
-                                          ),
+                                        const SizedBox(height: 14),
+                                        _GlassSearchField(
+                                          onChanged: (s) =>
+                                              _filter(() => _search = s),
+                                          hint: '搜索内容或标签',
+                                          dense: true,
                                         ),
-                                      _ActionMenu<String>(
-                                        tooltip: '按章节筛选',
-                                        selected: _chapter ?? '__all',
-                                        onSelected: (s) => _filter(
-                                          () => _chapter = s == '__all'
-                                              ? null
-                                              : s,
-                                        ),
-                                        options: {
-                                          '__all': '所有章节',
-                                          '': '未分类',
-                                          for (final s
-                                              in d?.chapters ?? <String>[])
-                                            s: s,
-                                        },
-                                        child: Text(
-                                          _chapter == null
-                                              ? '章节 ▾'
-                                              : _chapter!.isEmpty
-                                              ? '未分类 ▾'
-                                              : '$_chapter ▾',
-                                        ),
-                                      ),
-                                      if (_tags.isNotEmpty)
-                                        _ActionMenu<String>(
-                                          tooltip: '按标签筛选',
-                                          selected: _tag ?? '__all',
-                                          onSelected: (s) => _filter(
-                                            () =>
-                                                _tag = s == '__all' ? null : s,
-                                          ),
-                                          options: {
-                                            '__all': '所有标签',
-                                            for (final s in _tags) s: s,
+                                        const SizedBox(height: 10),
+                                        _GlassSegments<String?>(
+                                          options: const {
+                                            null: '全部',
+                                            'library': '未加入',
+                                            'active': '计划内',
+                                            'paused': '暂停',
                                           },
-                                          child: Text('${_tag ?? '标签'} ▾'),
+                                          value: _plan,
+                                          stretch: true,
+                                          onChanged: (value) =>
+                                              _filter(() => _plan = value),
                                         ),
-                                    ],
+                                        const SizedBox(height: 10),
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          crossAxisAlignment:
+                                              WrapCrossAlignment.center,
+                                          children: [
+                                            for (final entry in const {
+                                              'favorite': '收藏',
+                                              'difficult': '难卡',
+                                            }.entries)
+                                              _GlassChoice(
+                                                icon: entry.key == 'favorite'
+                                                    ? Icons.star_outline_rounded
+                                                    : Icons.psychology_outlined,
+                                                label: entry.value,
+                                                selected: _focus == entry.key,
+                                                onPressed: () => _filter(
+                                                  () => _focus =
+                                                      _focus == entry.key
+                                                      ? null
+                                                      : entry.key,
+                                                ),
+                                              ),
+                                            _ActionMenu<String>(
+                                              tooltip: '按章节筛选',
+                                              selected: _chapter ?? '__all',
+                                              onSelected: (s) => _filter(
+                                                () => _chapter = s == '__all'
+                                                    ? null
+                                                    : s,
+                                              ),
+                                              options: {
+                                                '__all': '所有章节',
+                                                '': '未分类',
+                                                for (final s
+                                                    in d?.chapters ??
+                                                        <String>[])
+                                                  s: s,
+                                              },
+                                              child: Text(
+                                                _chapter == null
+                                                    ? '章节 ▾'
+                                                    : _chapter!.isEmpty
+                                                    ? '未分类 ▾'
+                                                    : '$_chapter ▾',
+                                              ),
+                                            ),
+                                            if (_tags.isNotEmpty)
+                                              _ActionMenu<String>(
+                                                tooltip: '按标签筛选',
+                                                selected: _tag ?? '__all',
+                                                onSelected: (s) => _filter(
+                                                  () => _tag = s == '__all'
+                                                      ? null
+                                                      : s,
+                                                ),
+                                                options: {
+                                                  '__all': '所有标签',
+                                                  for (final s in _tags) s: s,
+                                                },
+                                                child: Text(
+                                                  '${_tag ?? '标签'} ▾',
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: NotificationListener<UserScrollNotification>(
-                onNotification: (notification) {
-                  if (notification.depth == 0 &&
-                      notification.direction != ScrollDirection.idle) {
-                    final show =
-                        notification.direction == ScrollDirection.forward;
-                    if (show != _showTools) setState(() => _showTools = show);
-                  }
-                  return false;
-                },
-                child: _cards.isEmpty && !_loading
-                    ? SingleChildScrollView(
-                        padding: const EdgeInsets.all(20),
-                        child: _Empty(
-                          icon: Icons.note_add_outlined,
-                          title: _focus == null ? '这里还没有卡片' : '当前筛选没有卡片',
-                          detail: _focus == 'favorite'
-                              ? '点亮卡片右侧的星标，把重点收进收藏。'
-                              : _focus == 'difficult'
-                              ? '最近一次正式评分为“忘记”或“模糊”的卡片会出现在这里。'
-                              : '新建或导入卡片后，勾选卡片即可加入学习计划。',
-                        ),
-                      )
-                    : IgnorePointer(
-                        ignoring: _enrolling,
-                        child: Listener(
-                          // 起始行会被懒加载列表回收，拖选的移动和松手由稳定的外层接收。
-                          onPointerMove: (event) {
-                            if (event.pointer != _selectionPointer ||
-                                _selectionAnchor == null) {
-                              return;
-                            }
-                            _selectionPosition = event.position;
-                            _paintSelection();
-                          },
-                          onPointerUp: (event) {
-                            if (event.pointer == _selectionPointer) {
-                              _endSelection();
-                            }
-                          },
-                          onPointerCancel: (event) {
-                            if (event.pointer == _selectionPointer) {
-                              _endSelection();
-                            }
-                          },
-                          child: ListView.builder(
-                            key: _listKey,
-                            controller: _scroll,
+                        if (_cards.isEmpty && !_loading)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: Padding(
+                              padding: const EdgeInsets.all(20),
+                              child: _Empty(
+                                icon: Icons.note_add_outlined,
+                                title: _focus == null ? '这里还没有卡片' : '当前筛选没有卡片',
+                                detail: _focus == 'favorite'
+                                    ? '点亮卡片右侧的星标，把重点收进收藏。'
+                                    : _focus == 'difficult'
+                                    ? '最近一次正式评分为“忘记”或“模糊”的卡片会出现在这里。'
+                                    : '新建或导入卡片后，勾选卡片即可加入学习计划。',
+                              ),
+                            ),
+                          )
+                        else
+                          SliverPadding(
                             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                            itemExtent: _rowExtent,
-                            itemCount: _cards.length + (_more ? 1 : 0),
-                            itemBuilder: (context, i) {
-                              if (i == _cards.length) {
-                                return const Padding(
-                                  padding: EdgeInsets.all(12),
-                                  child: Center(
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
+                            sliver: SliverFixedExtentList(
+                              key: _rowsKey,
+                              itemExtent: _rowExtent,
+                              delegate: SliverChildBuilderDelegate((
+                                context,
+                                i,
+                              ) {
+                                if (i == _cards.length) {
+                                  return const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: Center(
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  );
+                                }
+                                final card = _cards[i];
+                                return Card(
+                                  key: ValueKey(card.id),
+                                  margin: const EdgeInsets.symmetric(
+                                    vertical: 3,
+                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  shape: const RoundedSuperellipseBorder(
+                                    borderRadius: BorderRadius.all(
+                                      Radius.circular(16),
+                                    ),
+                                  ),
+                                  color: _selected.contains(card.id)
+                                      ? c.secondaryContainer
+                                      : c.surfaceContainerLow,
+                                  child: InkWell(
+                                    onTap: () => _push(
+                                      context,
+                                      _CardPage(
+                                        store: widget.store,
+                                        cardId: card.id,
+                                      ),
+                                    ),
+                                    onLongPress: () =>
+                                        setState(() => _selected.add(card.id)),
+                                    child: Row(
+                                      children: [
+                                        Listener(
+                                          onPointerDown: (event) {
+                                            _selectionPointer ??= event.pointer;
+                                          },
+                                          child: GestureDetector(
+                                            behavior: HitTestBehavior.opaque,
+                                            onVerticalDragStart: (event) =>
+                                                _beginSelection(
+                                                  i,
+                                                  event.globalPosition,
+                                                ),
+                                            child: SizedBox(
+                                              width: 44,
+                                              height: double.infinity,
+                                              child: Checkbox(
+                                                value: _selected.contains(
+                                                  card.id,
+                                                ),
+                                                onChanged: (checked) =>
+                                                    setState(() {
+                                                      checked!
+                                                          ? _selected.add(
+                                                              card.id,
+                                                            )
+                                                          : _selected.remove(
+                                                              card.id,
+                                                            );
+                                                    }),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Tooltip(
+                                            message:
+                                                '${card.chapter.isEmpty ? '未分类' : card.chapter} · ${switch (card.plan) {
+                                                  'active' => card.isNew ? '等待新学' : '计划内',
+                                                  'paused' => '已暂停',
+                                                  _ => '未加入计划',
+                                                }}${card.tags.isEmpty ? '' : ' · ${card.tags.join(' / ')}'}',
+                                            child: Text(
+                                              _short(card.source, 140),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                height: 1.4,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        _FavoriteButton(
+                                          store: widget.store,
+                                          card: card,
+                                        ),
+                                        const SizedBox(width: 4),
+                                      ],
                                     ),
                                   ),
                                 );
-                              }
-                              final card = _cards[i];
-                              return Card(
-                                key: ValueKey(card.id),
-                                margin: const EdgeInsets.symmetric(vertical: 3),
-                                clipBehavior: Clip.antiAlias,
-                                shape: const RoundedSuperellipseBorder(
-                                  borderRadius: BorderRadius.all(
-                                    Radius.circular(16),
-                                  ),
-                                ),
-                                color: _selected.contains(card.id)
-                                    ? c.secondaryContainer
-                                    : c.surfaceContainerLow,
-                                child: InkWell(
-                                  onTap: () => _push(
-                                    context,
-                                    _CardPage(
-                                      store: widget.store,
-                                      cardId: card.id,
-                                    ),
-                                  ),
-                                  onLongPress: () =>
-                                      setState(() => _selected.add(card.id)),
-                                  child: Row(
-                                    children: [
-                                      Listener(
-                                        onPointerDown: (event) {
-                                          _selectionPointer ??= event.pointer;
-                                        },
-                                        child: GestureDetector(
-                                          behavior: HitTestBehavior.opaque,
-                                          onVerticalDragStart: (event) =>
-                                              _beginSelection(
-                                                i,
-                                                event.globalPosition,
-                                              ),
-                                          child: SizedBox(
-                                            width: 44,
-                                            height: double.infinity,
-                                            child: Checkbox(
-                                              value: _selected.contains(
-                                                card.id,
-                                              ),
-                                              onChanged: (checked) =>
-                                                  setState(() {
-                                                    checked!
-                                                        ? _selected.add(card.id)
-                                                        : _selected.remove(
-                                                            card.id,
-                                                          );
-                                                  }),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Tooltip(
-                                          message:
-                                              '${card.chapter.isEmpty ? '未分类' : card.chapter} · ${switch (card.plan) {
-                                                'active' => card.isNew ? '等待新学' : '计划内',
-                                                'paused' => '已暂停',
-                                                _ => '未加入计划',
-                                              }}${card.tags.isEmpty ? '' : ' · ${card.tags.join(' / ')}'}',
-                                          child: Text(
-                                            _short(card.source, 140),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              height: 1.4,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      _FavoriteButton(
-                                        store: widget.store,
-                                        card: card,
-                                      ),
-                                      const SizedBox(width: 4),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
+                              }, childCount: _cards.length + (_more ? 1 : 0)),
+                            ),
                           ),
-                        ),
-                      ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
             SafeArea(

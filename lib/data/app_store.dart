@@ -12,6 +12,7 @@ import '../domain/entities.dart';
 import '../domain/statistics.dart';
 import 'connection.dart';
 import 'database.dart';
+import 'diagnostics.dart';
 import 'statistics_compute.dart';
 
 typedef CardSearchHit = ({StudyCard card, List<String> deckNames});
@@ -389,6 +390,10 @@ class AppStore extends ChangeNotifier {
       randomOrder: shuffle,
     );
     final ids = pool.take(limit).map((c) => c.id).toList();
+    DiagnosticLog.instance.event(
+      '专项练习',
+      '准备：scope=$focus limit=$limit shuffle=$shuffle matched=${ids.length}',
+    );
     if (ids.isEmpty) throw const FormatException('当前范围没有可练习的卡片');
     final session = PracticeSession(
       deckId: deckId,
@@ -466,6 +471,10 @@ class AppStore extends ChangeNotifier {
     Iterable<String> ids,
     Map<String, dynamic> values,
   ) async {
+    DiagnosticLog.instance.event(
+      '批量操作',
+      '开始：count=${ids.length} fields=${values.keys.join(',')} plan=${values['plan'] ?? '-'}',
+    );
     await db.transaction(() async {
       for (final id in ids) {
         final c = await card(id);
@@ -601,90 +610,87 @@ class AppStore extends ChangeNotifier {
     return raw == null ? null : StudySession.fromJson(decodeObject(raw));
   }
 
-  Future<StudySession> prepareSession({DateTime? at}) =>
-      db.transaction(() async {
-        final now = at ?? DateTime.now();
-        final today = dayKey(now);
-        final old = await session();
-        final queue = <QueueEntry>[];
-        final seen = <String>{};
-        final active = old == null || old.queue.isEmpty
-            ? <String>{}
-            : (await db.rows(
-                "SELECT id FROM cards WHERE plan='active' AND id IN (SELECT value FROM json_each(?))",
-                [jsonEncode(old.queue.map((entry) => entry.cardId).toList())],
-              )).map((r) => r['id'] as String).toSet();
-        if (old != null) {
-          for (final e in old.queue) {
-            if (active.contains(e.cardId) &&
-                (old.day == today || e.stage == 'relearn') &&
-                seen.add(e.cardId)) {
-              queue.add(e);
-            }
-          }
+  Future<StudySession> prepareSession({
+    DateTime? at,
+  }) => db.transaction(() async {
+    final now = at ?? DateTime.now();
+    final today = dayKey(now);
+    final old = await session();
+    DiagnosticLog.instance.event(
+      '学习任务',
+      '准备：day=$today previous=${old?.queue.length ?? 0}',
+    );
+    final queue = <QueueEntry>[];
+    final seen = <String>{};
+    final active = old == null || old.queue.isEmpty
+        ? <String>{}
+        : (await db.rows(
+            "SELECT id FROM cards WHERE plan='active' AND id IN (SELECT value FROM json_each(?))",
+            [jsonEncode(old.queue.map((entry) => entry.cardId).toList())],
+          )).map((r) => r['id'] as String).toSet();
+    if (old != null) {
+      for (final e in old.queue) {
+        if (active.contains(e.cardId) &&
+            (old.day == today || e.stage == 'relearn') &&
+            seen.add(e.cardId)) {
+          queue.add(e);
         }
-        final due = await db.rows(
-          "SELECT id FROM cards WHERE plan='active' AND due_at<? AND NOT EXISTS (SELECT 1 FROM reviews WHERE card_id=cards.id AND kind='formal' AND reviewed_at>=? AND reviewed_at<?) ORDER BY due_at",
-          [
-            dayEnd(now).millisecondsSinceEpoch,
-            dayStart(now).millisecondsSinceEpoch,
-            dayEnd(now).millisecondsSinceEpoch,
-          ],
-        );
-        final reviews = <QueueEntry>[];
-        for (final r in due) {
-          if (seen.add(r['id'])) reviews.add(QueueEntry(r['id'], 'review'));
-        }
-        // Due reviews precede unstarted new material; existing relearning order is preserved.
-        final firstNew = queue.indexWhere((e) => e.stage == 'new');
-        queue.insertAll(firstNew < 0 ? 0 : firstNew, reviews);
-        for (final d in await decks()) {
-          final studied =
-              (await db.rows(
-                    'SELECT count(*) n FROM cards WHERE first_learned>=? AND first_learned<? AND EXISTS (SELECT 1 FROM card_decks WHERE card_id=cards.id AND deck_id=?)',
-                    [
-                      dayStart(now).millisecondsSinceEpoch,
-                      dayEnd(now).millisecondsSinceEpoch,
-                      d.id,
-                    ],
-                  )).first['n']
-                  as int;
-          final fresh = await db.rows(
-            "SELECT id FROM cards WHERE plan='active' AND first_learned IS NULL AND EXISTS (SELECT 1 FROM card_decks WHERE card_id=cards.id AND deck_id=?) ORDER BY enrolled_at,cards.rowid LIMIT ?",
-            [d.id, math.max(0, d.newLimit - studied)],
-          );
-          final allowed = fresh.map((e) => e['id']).toSet();
-          // Reducing the daily limit removes new cards that have not been studied yet.
-          final pendingNew = queue
-              .where((e) => e.stage == 'new')
-              .map((e) => e.cardId)
-              .toList();
-          if (pendingNew.isNotEmpty) {
-            final deckIds = (await db.rows(
-              'SELECT card_id FROM card_decks WHERE deck_id=? AND card_id IN (SELECT value FROM json_each(?))',
-              [d.id, jsonEncode(pendingNew)],
-            )).map((e) => e['card_id']).toSet();
-            queue.removeWhere(
-              (e) =>
-                  e.stage == 'new' &&
-                  deckIds.contains(e.cardId) &&
-                  !allowed.contains(e.cardId),
-            );
-          }
-          for (final r in fresh) {
-            if (seen.add(r['id'])) queue.add(QueueEntry(r['id'], 'new'));
-          }
-        }
-        final next = StudySession(
-          day: today,
-          queue: queue,
-          completed: old?.day == today ? old!.completed : 0,
-          started: old?.day == today ? old!.started : 0,
-        );
-        await setSetting('session', jsonEncode(next.toJson()));
-        if (old?.day != today) await clearSetting('undo');
-        return next;
-      });
+      }
+    }
+    final due = await db.rows(
+      "SELECT id FROM cards WHERE plan='active' AND due_at<? AND NOT EXISTS (SELECT 1 FROM reviews WHERE card_id=cards.id AND kind='formal' AND reviewed_at>=? AND reviewed_at<?) ORDER BY due_at",
+      [
+        dayEnd(now).millisecondsSinceEpoch,
+        dayStart(now).millisecondsSinceEpoch,
+        dayEnd(now).millisecondsSinceEpoch,
+      ],
+    );
+    final reviews = <QueueEntry>[];
+    for (final r in due) {
+      if (seen.add(r['id'])) reviews.add(QueueEntry(r['id'], 'review'));
+    }
+    // Due reviews precede unstarted new material; existing relearning order is preserved.
+    final firstNew = queue.indexWhere((e) => e.stage == 'new');
+    queue.insertAll(firstNew < 0 ? 0 : firstNew, reviews);
+    final allowedNew = <String>{};
+    for (final d in await decks()) {
+      final studied =
+          (await db.rows(
+                'SELECT count(*) n FROM cards WHERE first_learned>=? AND first_learned<? AND EXISTS (SELECT 1 FROM card_decks WHERE card_id=cards.id AND deck_id=?)',
+                [
+                  dayStart(now).millisecondsSinceEpoch,
+                  dayEnd(now).millisecondsSinceEpoch,
+                  d.id,
+                ],
+              )).first['n']
+              as int;
+      final fresh = await db.rows(
+        "SELECT id FROM cards WHERE plan='active' AND first_learned IS NULL AND EXISTS (SELECT 1 FROM card_decks WHERE card_id=cards.id AND deck_id=?) ORDER BY enrolled_at,cards.rowid LIMIT ?",
+        [d.id, math.max(0, d.newLimit - studied)],
+      );
+      allowedNew.addAll(fresh.map((e) => e['id'] as String));
+    }
+    // 共享卡片只需满足一个牌组的额度，不能被另一个牌组从任务中删掉。
+    queue.removeWhere(
+      (e) => e.stage == 'new' && !allowedNew.contains(e.cardId),
+    );
+    for (final id in allowedNew) {
+      if (seen.add(id)) queue.add(QueueEntry(id, 'new'));
+    }
+    final next = StudySession(
+      day: today,
+      queue: queue,
+      completed: old?.day == today ? old!.completed : 0,
+      started: old?.day == today ? old!.started : 0,
+    );
+    await setSetting('session', jsonEncode(next.toJson()));
+    DiagnosticLog.instance.event(
+      '学习任务',
+      '就绪：new=${queue.where((e) => e.stage == 'new').length} review=${queue.where((e) => e.stage == 'review').length} relearn=${queue.where((e) => e.stage == 'relearn').length} completed=${next.completed}',
+    );
+    if (old?.day != today) await clearSetting('undo');
+    return next;
+  });
 
   MmxAlgorithm algorithm(DeckData d, int version) =>
       algorithmForDeck(d, version);
@@ -694,6 +700,7 @@ class AppStore extends ChangeNotifier {
     DateTime? at,
   }) async {
     if (_submitting) return;
+    DiagnosticLog.instance.event('学习评分', '${grade.name} elapsedMs=$elapsedMs');
     _submitting = true;
     try {
       final now = at ?? DateTime.now();

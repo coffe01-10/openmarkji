@@ -4,10 +4,12 @@ import 'package:flutter/services.dart';
 
 import 'data/app_store.dart';
 import 'data/database.dart';
+import 'data/diagnostics.dart';
 import 'ui/app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  DiagnosticLog.instance.installErrorHandlers();
   LicenseRegistry.addLicense(() async* {
     final license = await rootBundle.loadString('third_party/GPL-3.0/LICENSE');
     yield LicenseEntryWithLineBreaks(

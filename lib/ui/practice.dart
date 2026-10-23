@@ -129,6 +129,7 @@ class _PracticeSetupPageState extends State<_PracticeSetupPage> {
                   'difficult': '最近难卡',
                 },
                 onChanged: (v) => setState(() {
+                  DiagnosticLog.instance.event('专项练习', '切换范围：$v');
                   _focus = v;
                   _preview = _previewCards();
                 }),
@@ -138,6 +139,7 @@ class _PracticeSetupPageState extends State<_PracticeSetupPage> {
                 value: _limit,
                 options: const {'10': '10 张', '20': '20 张', '50': '50 张'},
                 onChanged: (v) => setState(() {
+                  DiagnosticLog.instance.event('专项练习', '切换数量：$v');
                   _limit = v;
                   _preview = _previewCards();
                 }),
@@ -152,14 +154,42 @@ class _PracticeSetupPageState extends State<_PracticeSetupPage> {
           ),
         ),
         const SizedBox(height: 18),
-        _Load(
-          future: _preview,
-          builder: (cards) => Text(
-            cards.isEmpty
-                ? '当前范围没有卡片。可先收藏重点卡片，或完成一次正式学习。'
-                : '本轮将练习 ${cards.length} 张卡片，包括尚未加入计划的资料。',
-            style: const TextStyle(height: 1.7),
-          ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            const empty = '当前范围没有卡片。可先收藏重点卡片，或完成一次正式学习。';
+            String summary(int count) => '本轮将练习 $count 张卡片，包括尚未加入计划的资料。';
+            const style = TextStyle(height: 1.7);
+            final painter = TextPainter(
+              textDirection: Directionality.of(context),
+              textScaler: MediaQuery.textScalerOf(context),
+            );
+            var height = 0.0;
+            for (final text in [empty, summary(50)]) {
+              painter.text = TextSpan(
+                text: text,
+                style: DefaultTextStyle.of(context).style.merge(style),
+              );
+              painter.layout(maxWidth: constraints.maxWidth);
+              height = math.max(height, painter.height);
+            }
+            painter.dispose();
+            return SizedBox(
+              height: height,
+              child: FutureBuilder<List<StudyCard>>(
+                future: _preview,
+                builder: (context, snapshot) => Text(
+                  snapshot.hasError
+                      ? '读取失败：${snapshot.error}'
+                      : snapshot.data == null
+                      ? '正在读取练习范围…'
+                      : snapshot.data!.isEmpty
+                      ? empty
+                      : summary(snapshot.data!.length),
+                  style: style,
+                ),
+              ),
+            );
+          },
         ),
         const SizedBox(height: 12),
         const Text(
@@ -227,7 +257,8 @@ class _PracticePageState extends State<_PracticePage> {
             ..start();
         });
       }
-    } catch (e) {
+    } catch (e, stack) {
+      DiagnosticLog.instance.error('加载专项练习', e, stack);
       if (mounted) {
         setState(() => _busy = false);
         _toast(context, '$e');

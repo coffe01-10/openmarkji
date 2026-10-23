@@ -134,7 +134,8 @@ class _EditorPageState extends State<_EditorPage> {
         });
         Navigator.pop(context);
       }
-    } catch (e) {
+    } catch (e, stack) {
+      DiagnosticLog.instance.error('保存卡片', e, stack);
       if (mounted) {
         setState(() => _saving = false);
         _toast(context, '$e');

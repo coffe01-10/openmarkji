@@ -23,7 +23,7 @@ class _AboutPage extends StatelessWidget {
                 style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
-              const Text('$appDisplayVersion ($appBuild) · 离线记忆，慢慢积累'),
+              const Text('$appDisplayVersion · 离线记忆，慢慢积累'),
             ],
           ),
         ),
@@ -205,7 +205,7 @@ class _PoliciesPage extends StatelessWidget {
                       ),
                       (
                         '备份与反馈',
-                        '导出的备份包含卡片、媒体和学习记录，请自行保管。反馈报告只含版本、平台及你填写的问题，复制或导出后由你决定如何分享。',
+                        '导出的备份包含卡片、媒体和学习记录，请自行保管。反馈报告包含版本、平台及你填写的问题。日志仅在你开启捕捉后记录操作摘要和异常，不会自动上传；复制或导出后由你决定如何分享。',
                       ),
                       ('删除数据', '你可以在牌组中删除卡片或牌组。卸载应用或清除网站数据可能移除本地资料，操作前请先导出备份。'),
                     ],
@@ -322,16 +322,128 @@ class _HelpPage extends StatelessWidget {
         ),
         _AppearanceHeader('反馈', Icons.chat_bubble_outline_rounded),
         _AppearanceCard(
-          child: _supportTile(
-            Icons.edit_note_rounded,
-            '问题反馈与功能建议',
-            () => _push(context, const _FeedbackPage()),
-            subtitle: '填写问题，复制或导出反馈报告',
+          child: Column(
+            children: [
+              _supportTile(
+                Icons.edit_note_rounded,
+                '问题反馈与功能建议',
+                () => _push(context, const _FeedbackPage()),
+                subtitle: '填写问题，复制或导出反馈报告',
+              ),
+              _supportTile(
+                Icons.bug_report_outlined,
+                '捕捉日志',
+                () => _push(context, const _DiagnosticsPage()),
+                subtitle: '记录复现步骤和异常，预览、复制或导出',
+              ),
+            ],
           ),
         ),
       ],
     ),
   );
+}
+
+class _DiagnosticsPage extends StatelessWidget {
+  const _DiagnosticsPage();
+
+  @override
+  Widget build(BuildContext context) {
+    final log = DiagnosticLog.instance;
+    return _SettingsDetail(
+      title: '捕捉日志',
+      child: ListenableBuilder(
+        listenable: log,
+        builder: (context, _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _AppearanceCard(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      log.capturing
+                          ? '正在捕捉 · ${log.count} 条记录'
+                          : '已停止 · ${log.count} 条记录',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '先开始捕捉，再返回应用复现问题，最后回到这里停止并导出。日志包含页面切换、学习任务摘要、异常和堆栈，不会自动上传。\n\n记录仅保留在本次运行中，关闭应用前请导出；再次开始会替换旧记录。错误信息可能带有文件路径或服务器地址，可在下方预览。',
+                      style: TextStyle(height: 1.7),
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      onPressed: log.capturing ? log.stop : log.start,
+                      icon: Icon(
+                        log.capturing
+                            ? Icons.stop_rounded
+                            : Icons.fiber_manual_record_rounded,
+                      ),
+                      label: Text(log.capturing ? '停止捕捉' : '开始捕捉'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: log.count == 0
+                          ? null
+                          : () => _action(context, () async {
+                              await Clipboard.setData(
+                                ClipboardData(text: log.report),
+                              );
+                              if (context.mounted) _toast(context, '已复制诊断日志');
+                            }),
+                      icon: const Icon(Icons.copy_rounded),
+                      label: const Text('复制日志'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton.icon(
+                      onPressed: log.count == 0
+                          ? null
+                          : () => _action(context, () async {
+                              await _saveBytes(
+                                'OpenMarkji-log-${DateTime.now().millisecondsSinceEpoch}.txt',
+                                Uint8List.fromList(utf8.encode(log.report)),
+                              );
+                            }),
+                      icon: const Icon(Icons.file_download_outlined),
+                      label: const Text('导出日志'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (log.count > 0) ...[
+              _AppearanceHeader('日志预览', Icons.subject_rounded),
+              _AppearanceCard(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 320),
+                    child: SingleChildScrollView(
+                      child: SelectableText(
+                        log.report,
+                        style: const TextStyle(fontSize: 12, height: 1.6),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: log.clear,
+                  icon: const Icon(Icons.clear_all_rounded),
+                  label: const Text('清空日志'),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _FeedbackPage extends StatefulWidget {
@@ -350,7 +462,7 @@ class _FeedbackPageState extends State<_FeedbackPage> {
   }
 
   String get _report =>
-      '# OpenMarkji 反馈\n\n类型：${_kind == 'bug' ? '问题反馈' : '功能建议'}\n版本：$appDisplayVersion ($appBuild)\n平台：${kIsWeb ? 'Web' : defaultTargetPlatform.name}\n\n${_description.text.trim()}\n';
+      '# OpenMarkji 反馈\n\n类型：${_kind == 'bug' ? '问题反馈' : '功能建议'}\n版本：$appDisplayVersion\n平台：${kIsWeb ? 'Web' : defaultTargetPlatform.name}\n\n${_description.text.trim()}\n';
   @override
   Widget build(BuildContext context) => _SettingsDetail(
     title: '问题反馈与功能建议',

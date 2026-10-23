@@ -313,7 +313,8 @@ class _RowExpandRoute extends PageRoute<void> {
     required this.transition,
   }) : _snapshot = SnapshotController(
          allowSnapshotting: transition > Duration.zero,
-       );
+       ),
+       super(settings: RouteSettings(name: _pageName(page)));
 
   final Rect source;
   final BorderRadius closedRadius;

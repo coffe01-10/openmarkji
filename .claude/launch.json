@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "openmarkji-web",
+      "runtimeExecutable": "D:/flutter/bin/flutter.bat",
+      "runtimeArgs": ["run", "-d", "web-server", "--web-port", "5130", "--no-pub"],
+      "port": 5130
+    }
+  ]
+}

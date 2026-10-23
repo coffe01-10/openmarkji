@@ -6,7 +6,12 @@ import 'package:dynamic_color/dynamic_color.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
-import 'package:flutter/rendering.dart' show ScrollDirection;
+import 'package:flutter/rendering.dart'
+    show
+        RenderSliver,
+        RenderSliverFloatingPersistentHeader,
+        FloatingHeaderSnapConfiguration,
+        ScrollDirection;
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind, kPrimaryButton;
 import 'package:flutter/foundation.dart'
@@ -17,6 +22,7 @@ import '../algorithms/mmx.dart';
 import '../content/markji.dart';
 import '../content/official_decks.dart';
 import '../data/app_store.dart';
+import '../data/diagnostics.dart';
 import '../data/app_updates.dart';
 import '../data/webdav.dart';
 import '../data/file_export.dart' as file_export;
@@ -153,6 +159,7 @@ class OpenMarkjiApp extends StatelessWidget {
 
         return MaterialApp(
           title: 'OpenMarkji',
+          navigatorObservers: [DiagnosticNavigationObserver()],
           debugShowCheckedModeBanner: false,
           theme: theme(Brightness.light, light),
           darkTheme: theme(Brightness.dark, dark),
@@ -202,6 +209,7 @@ class _ShellState extends State<_Shell> {
   int _direction = 1;
   void _select(int index) {
     if (_index == index) return;
+    DiagnosticLog.instance.event('导航', labels[index]);
     setState(() {
       _direction = index > _index ? 1 : -1;
       _index = index;
@@ -348,8 +356,30 @@ class _ShellState extends State<_Shell> {
   }
 }
 
+String _pageName(Widget page) => switch (page) {
+  _DeckPage() => '牌组选卡',
+  _StudyPage() => '每日学习',
+  _PracticeSetupPage() => '专项练习设置',
+  _PracticePage() => '专项练习',
+  _EditorPage() => '卡片编辑',
+  _AppearancePage() => '外观与阅读',
+  _StudyPrefsPage() => page.interaction ? '卡片与交互' : '学习偏好',
+  _BackupPage() => '资料与备份',
+  _WebDavPage() => 'WebDAV 备份',
+  _AboutPage() => '关于',
+  _HelpPage() => '帮助与反馈',
+  _DiagnosticsPage() => '捕捉日志',
+  _FeedbackPage() => '反馈报告',
+  _ => page.runtimeType.toString(),
+};
+
 Future<void> _push(BuildContext context, Widget page) =>
-    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        settings: RouteSettings(name: _pageName(page)),
+        builder: (_) => page,
+      ),
+    );
 void _toast(BuildContext context, String text) {
   ScaffoldMessenger.of(context).hideCurrentSnackBar();
   ScaffoldMessenger.of(context).showSnackBar(
@@ -372,7 +402,8 @@ Future<void> _action(
 ) async {
   try {
     await action();
-  } catch (e) {
+  } catch (e, stack) {
+    DiagnosticLog.instance.error('操作失败', e, stack);
     if (context.mounted) _toast(context, '$e');
   }
 }

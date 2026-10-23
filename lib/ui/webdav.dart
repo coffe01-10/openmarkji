@@ -70,7 +70,8 @@ class _WebDavPanelState extends State<_WebDavPanel> {
     });
     try {
       await action();
-    } catch (e) {
+    } catch (e, stack) {
+      DiagnosticLog.instance.error('WebDAV 操作', e, stack);
       if (mounted) setState(() => _message = '操作失败：$e');
     } finally {
       if (mounted) {

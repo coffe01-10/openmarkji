@@ -65,7 +65,8 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
         _watch.reset();
         _watch.start();
       }
-    } catch (e) {
+    } catch (e, stack) {
+      DiagnosticLog.instance.error('加载学习任务', e, stack);
       if (mounted) {
         setState(() => _busy = false);
         _toast(context, '$e');
@@ -80,7 +81,8 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
     try {
       await widget.store.grade(grade, elapsedMs: _watch.elapsedMilliseconds);
       await _load();
-    } catch (e) {
+    } catch (e, stack) {
+      DiagnosticLog.instance.error('学习评分', e, stack);
       if (mounted) {
         setState(() => _busy = false);
         _watch.start();
@@ -119,7 +121,8 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
                       try {
                         await widget.store.undo();
                         await _load();
-                      } catch (e) {
+                      } catch (e, stack) {
+                        DiagnosticLog.instance.error('撤销评分', e, stack);
                         if (context.mounted) {
                           setState(() => _busy = false);
                           _toast(context, '$e');

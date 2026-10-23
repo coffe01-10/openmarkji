@@ -4,7 +4,8 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, PointerScrollEvent;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -12,6 +13,7 @@ import 'package:openmarkji/algorithms/mmx.dart';
 import 'package:openmarkji/data/app_updates.dart';
 import 'package:openmarkji/data/app_store.dart';
 import 'package:openmarkji/data/database.dart';
+import 'package:openmarkji/data/diagnostics.dart';
 import 'package:openmarkji/domain/entities.dart';
 import 'package:openmarkji/ui/app.dart';
 import 'package:openmarkji/ui/content_view.dart';
@@ -257,12 +259,15 @@ void main() {
     await tester.tap(find.byTooltip('专项练习'));
     await tester.pumpAndSettle();
     final position = tester.getTopLeft(find.text('练习范围'));
+    final startButton = find.widgetWithText(FilledButton, '开始新一轮练习');
+    final buttonRect = tester.getRect(startButton);
     final sessionQueries = observed.sessionQueries;
     Future<void> checkFrames() async {
       for (var frame = 0; frame < 35; frame++) {
         await tester.pump(const Duration(milliseconds: 16));
         expect(find.byType(CircularProgressIndicator), findsNothing);
         expect(tester.getTopLeft(find.text('练习范围')), position);
+        expect(tester.getRect(startButton), buttonRect);
         expect(tester.takeException(), isNull);
       }
     }
@@ -279,6 +284,12 @@ void main() {
     await checkFrames();
     await tester.pumpAndSettle();
     expect(find.textContaining('本轮将练习 1 张卡片'), findsOneWidget);
+    await tester.tap(find.text('收藏卡片'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('最近难卡'));
+    await checkFrames();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('当前范围没有卡片'), findsOneWidget);
     await tester.tap(find.byType(SwitchListTile));
     await checkFrames();
     expect(observed.sessionQueries, sessionQueries);
@@ -926,8 +937,8 @@ void main() {
     await deselect.up();
     await tester.pumpAndSettle();
     expect(find.text('全选筛选结果'), findsOneWidget);
-    final list = find.byType(ListView).last;
-    final controller = tester.widget<ListView>(list).controller!;
+    final list = find.byType(CustomScrollView).last;
+    final controller = tester.widget<CustomScrollView>(list).controller!;
     final brush = await tester.startGesture(first);
     await brush.moveTo(Offset(first.dx, tester.getRect(list).bottom - 4));
     for (var i = 0; i < 400; i++) {
@@ -956,7 +967,7 @@ void main() {
     // 系统取消触摸，以及第二根手指点击取消，都要立即结束自动滚动。
     for (final cancelPointer in [true, false]) {
       final next = await tester.startGesture(
-        tester.getCenter(find.byType(Checkbox).first),
+        tester.getCenter(find.byType(Checkbox).hitTestable().first),
       );
       await next.moveTo(Offset(first.dx, tester.getRect(list).bottom - 4));
       await tester.pump(const Duration(milliseconds: 200));
@@ -982,9 +993,50 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('写卡片').hitTestable(), findsNothing);
     expect(tester.getRect(find.text('全选筛选结果')), footer);
-    await tester.drag(list, const Offset(0, 35));
+    final viewport = tester.getRect(list);
+    final tools = find.text('写卡片', skipOffstage: false);
+    final hiddenTop = tester.getTopLeft(tools).dy;
+    final pull = await tester.startGesture(tester.getCenter(list));
+    await pull.moveBy(const Offset(0, 24));
+    await tester.pump();
+    await pull.moveBy(const Offset(0, 20));
+    await tester.pump();
+    final partialTop = tester.getTopLeft(tools).dy;
+    expect(partialTop, greaterThan(hiddenTop));
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(tester.getTopLeft(tools).dy, partialTop, reason: '手指停住时不能自行弹出或缩回');
+    await pull.moveBy(const Offset(0, -3));
+    await tester.pump();
+    expect(tester.getTopLeft(tools).dy, closeTo(partialTop - 3, .1));
+    expect(tester.getRect(list), viewport);
+    await pull.moveBy(const Offset(0, 30));
+    await pull.up();
     await tester.pumpAndSettle();
     expect(find.text('写卡片').hitTestable(), findsOneWidget);
+
+    controller.jumpTo(0);
+    await tester.pumpAndSettle();
+    var toolsTop = tester.getTopLeft(tools).dy;
+    for (final delta in [24.0, 24.0, 24.0, -12.0, -12.0]) {
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: tester.getCenter(list),
+          scrollDelta: Offset(0, delta),
+          kind: PointerDeviceKind.mouse,
+        ),
+      );
+      await tester.pump();
+      toolsTop -= delta;
+      expect(tester.getTopLeft(tools).dy, closeTo(toolsTop, .1));
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(
+        tester.getTopLeft(tools).dy,
+        closeTo(toolsTop, .1),
+        reason: '滚轮每一格之间不能额外启动停靠动画',
+      );
+    }
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(tools).dy, closeTo(toolsTop, .1));
     expect(tester.takeException(), isNull);
   });
 
@@ -2098,6 +2150,50 @@ void main() {
           .onPressed,
       isNotNull,
     );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('捕捉日志'), 200);
+    await tester.tap(find.text('捕捉日志'));
+    await tester.pumpAndSettle();
+    final log = DiagnosticLog.instance;
+    addTearDown(() {
+      if (log.capturing) log.stop();
+      log.clear();
+    });
+    await tester.ensureVisible(find.text('开始捕捉'));
+    await tester.tap(find.text('开始捕捉'));
+    await tester.pumpAndSettle();
+    expect(log.capturing, isTrue);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('捕捉日志'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('停止捕捉'));
+    await tester.tap(find.text('停止捕捉'));
+    await tester.pumpAndSettle();
+    expect(log.capturing, isFalse);
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = call.arguments['text'] as String;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await tester.ensureVisible(find.text('复制日志'));
+    await tester.tap(find.text('复制日志'));
+    await tester.pumpAndSettle();
+    expect(copied, contains('日志 | 开始捕捉'));
+    expect(copied, contains('页面 | 进入 捕捉日志'));
+    expect(copied, contains('状态：已停止'));
     expect(tester.takeException(), isNull);
   });
 

@@ -188,6 +188,23 @@ void main() {
       isTrue,
     );
   });
+  test('新加入计划的共享卡片从首页进入学习时不被其他牌组额度移除', () async {
+    await store.putDeck(DeckData(id: 'd', name: '已达上限', newLimit: 0));
+    await store.putDeck(DeckData(id: 'shared', name: '待学习', newLimit: 2));
+    await add('new-shared', plan: 'library');
+    await store.db.customStatement('INSERT INTO card_decks VALUES (?,?)', [
+      'new-shared',
+      'shared',
+    ]);
+    await store.prepareSession(at: now);
+    await store.bulkUpdate(['new-shared'], {'plan': 'active'});
+    expect((await store.overview(at: now))['remaining'], 1);
+    for (var i = 0; i < 3; i++) {
+      expect((await store.prepareSession(at: now)).queue.map((e) => e.cardId), [
+        'new-shared',
+      ]);
+    }
+  });
   test('重学不改记忆状态，撤销恢复日志、队列和额度', () async {
     await add('a');
     await store.prepareSession(at: now);
