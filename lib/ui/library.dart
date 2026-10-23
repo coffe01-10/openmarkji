@@ -169,13 +169,7 @@ class _LibraryPageState extends State<_LibraryPage> {
                 decks: decks,
                 visible: visible,
                 selectedId: wide ? _selected : null,
-                onSelect: (id) {
-                  if (wide) {
-                    setState(() => _selected = id);
-                  } else {
-                    _push(context, _DeckPage(store: widget.store, deckId: id));
-                  }
-                },
+                onSelect: wide ? (id) => setState(() => _selected = id) : null,
               ),
             SliverToBoxAdapter(
               child: Padding(
@@ -222,7 +216,7 @@ class _DeckReorderList extends StatelessWidget {
     required this.store,
     required this.decks,
     required this.visible,
-    required this.onSelect,
+    this.onSelect,
     required this.counts,
     required this.onReorder,
     this.selectedId,
@@ -232,7 +226,7 @@ class _DeckReorderList extends StatelessWidget {
   final List<DeckData> decks;
   final List<DeckData> visible;
   final String? selectedId;
-  final ValueChanged<String> onSelect;
+  final ValueChanged<String>? onSelect;
   final Map<String, Map<String, int>> counts;
   final ValueChanged<List<String>> onReorder;
 
@@ -283,7 +277,7 @@ class _DeckReorderList extends StatelessWidget {
               deck: deck,
               counts: counts[deck.id]!,
               selected: deck.id == selectedId,
-              onTap: () => onSelect(deck.id),
+              onTap: onSelect == null ? null : () => onSelect!(deck.id),
             ),
           ),
         );
@@ -464,10 +458,12 @@ class _DeckPage extends StatefulWidget {
     super.key,
     required this.store,
     required this.deckId,
+    this.initialDeck,
     this.embedded = false,
   });
   final AppStore store;
   final String deckId;
+  final DeckData? initialDeck;
   final bool embedded;
   @override
   State<_DeckPage> createState() => _DeckPageState();
@@ -496,6 +492,7 @@ class _DeckPageState extends State<_DeckPage> {
   @override
   void initState() {
     super.initState();
+    _deck = widget.initialDeck;
     widget.store.addListener(_refresh);
     _refresh();
     _scroll.addListener(() {
