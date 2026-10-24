@@ -8,16 +8,46 @@ class ContentNode {
     this.offset, {
     this.params = const [],
     this.children = const [],
+    this.choice,
   });
   final String kind, text;
   final int offset;
   final List<String> params;
   final List<ContentNode> children;
+  final ChoiceQuestion? choice;
   String? param(String prefix) {
     for (final p in params) {
       if (p.startsWith(prefix)) return p.substring(prefix.length);
     }
     return null;
+  }
+}
+
+enum ChoiceOutcome { correct, partial, incorrect }
+
+class ChoiceOption {
+  const ChoiceOption({required this.correct, required this.nodes});
+  final bool correct;
+  final List<ContentNode> nodes;
+  String get text => nodes.map(ParsedContent._plain).join();
+}
+
+class ChoiceQuestion {
+  const ChoiceQuestion(
+    this.options, {
+    required this.multi,
+    required this.fixed,
+  });
+  final List<ChoiceOption> options;
+  final bool multi, fixed;
+
+  ChoiceOutcome evaluate(Set<int> selected) {
+    if (selected.isEmpty || selected.any((i) => !options[i].correct)) {
+      return ChoiceOutcome.incorrect;
+    }
+    return selected.length == options.where((o) => o.correct).length
+        ? ChoiceOutcome.correct
+        : ChoiceOutcome.partial;
   }
 }
 
@@ -31,6 +61,13 @@ class ParsedContent {
   const ParsedContent(this.nodes, this.issues);
   final List<ContentNode> nodes;
   final List<ContentIssue> issues;
+  Iterable<ContentNode> get questionChoices sync* {
+    for (final node in nodes) {
+      if (node.kind == 'answer') break;
+      if (node.choice != null) yield node;
+    }
+  }
+
   String get plainText => nodes.map(_plain).join();
   static String _plain(ContentNode n) => n.kind == 'answer'
       ? '\n答案\n'
@@ -38,6 +75,8 @@ class ParsedContent {
       ? '[图片]'
       : n.kind == 'P'
       ? '${n.children.map(_plain).join()}\n'
+      : n.choice != null
+      ? '${n.choice!.options.map((o) => '${o.correct ? '*' : '-'} ${o.text}').join('\n')}\n'
       : n.text;
 }
 
@@ -126,7 +165,18 @@ class MarkjiParser {
       final tag = header[1]!;
       final params = header[2]!.isEmpty ? <String>[] : header[2]!.split(',');
       final raw = source.substring(contentStart, end);
-      if (!{'T', 'P', 'F', 'E', 'Pic', 'Ref', 'Card'}.contains(tag)) {
+      if (tag == 'Choice') {
+        final choice = _choice(raw, params, base + contentStart, issues);
+        nodes.add(
+          ContentNode(
+            choice == null ? 'unsupported' : 'Choice',
+            choice == null ? source.substring(pos, end + 1) : _unescape(raw),
+            base + pos,
+            params: params,
+            choice: choice,
+          ),
+        );
+      } else if (!{'T', 'P', 'F', 'E', 'Pic', 'Ref', 'Card'}.contains(tag)) {
         issues.add(ContentIssue(base + pos, '$tag 暂不支持交互，已保留源码'));
         nodes.add(
           ContentNode(
@@ -157,6 +207,51 @@ class MarkjiParser {
     }
     flush(source.length);
     return nodes;
+  }
+
+  ChoiceQuestion? _choice(
+    String raw,
+    List<String> params,
+    int base,
+    List<ContentIssue> issues,
+  ) {
+    final options = <ChoiceOption>[];
+    var offset = 0;
+    for (final line in raw.split('\n')) {
+      if (line.trim().isNotEmpty) {
+        final match = RegExp(r'^\s*([*-])[ \t]+(.+)$').firstMatch(line);
+        if (match == null) {
+          issues.add(
+            ContentIssue(base + offset, '选择题每个选项须以 * 或 - 加空格开头，已保留原文'),
+          );
+          return null;
+        }
+        options.add(
+          ChoiceOption(
+            correct: match[1] == '*',
+            nodes: _scan(
+              match[2]!,
+              base + offset + line.length - match[2]!.length,
+              issues,
+            ),
+          ),
+        );
+      }
+      offset += line.length + 1;
+    }
+    final correct = options.where((o) => o.correct).length;
+    final multi = params.contains('multi');
+    if (options.length < 2 || correct == 0 || (!multi && correct != 1)) {
+      issues.add(
+        ContentIssue(base, '选择题至少需要两个选项和一个正确答案；多个正确答案须添加 multi，已保留原文'),
+      );
+      return null;
+    }
+    return ChoiceQuestion(
+      options,
+      multi: multi,
+      fixed: params.contains('fixed'),
+    );
   }
 
   String _unescape(String text) =>

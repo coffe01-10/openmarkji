@@ -6,6 +6,38 @@ import 'package:openmarkji/content/markji.dart';
 
 void main() {
   final parser = MarkjiParser();
+  test('选择题保留正确选项、样式和 fixed/multi，并区分全对、漏选与选错', () {
+    const source =
+        '哪些是哺乳动物？\n[Choice#fixed,multi#\n* [T#B#鲸]\n- 鲨鱼\n* 蝙蝠 \\[哺乳类\\]\n]\n---\n解析';
+    final parsed = parser.parse(source);
+    expect(parsed.issues, isEmpty);
+    final question = parsed.questionChoices.single.choice!;
+    expect(question.fixed, isTrue);
+    expect(question.multi, isTrue);
+    expect(question.options.map((o) => o.text), ['鲸', '鲨鱼', '蝙蝠 [哺乳类]']);
+    expect(question.options.first.nodes.single.kind, 'T');
+    expect(question.evaluate({0, 2}), ChoiceOutcome.correct);
+    expect(question.evaluate({0}), ChoiceOutcome.partial);
+    expect(question.evaluate({0, 1, 2}), ChoiceOutcome.incorrect);
+    expect(question.evaluate({}), ChoiceOutcome.incorrect);
+    expect(parsed.plainText, contains('* 鲸\n- 鲨鱼\n* 蝙蝠 [哺乳类]'));
+    final single = parser.parse('[Choice##\n- 错\n* 对\n]');
+    expect(single.nodes.single.choice!.fixed, isFalse);
+    expect(single.nodes.single.choice!.multi, isFalse);
+    expect(single.nodes.single.choice!.evaluate({1}), ChoiceOutcome.correct);
+    expect(single.nodes.single.choice!.evaluate({0}), ChoiceOutcome.incorrect);
+    const invalid = '[Choice##\n* 甲\n* 乙\n]';
+    expect(parser.parse(invalid).issues, isNotEmpty);
+    expect(parser.parse(invalid).plainText, invalid);
+    expect(
+      parser.parse('题目\n---\n[Choice##\n* 对\n- 错\n]').questionChoices,
+      isEmpty,
+    );
+    expect(splitImport('$source\n===CARD===\n下一张', delimiter: '===CARD==='), [
+      source,
+      '下一张',
+    ]);
+  });
   test('段落嵌套文字样式和挖空，保留分组', () {
     final result = parser.parse('[P#H1#[T#B#重点]与[F#2#内容]]\n---\n答案');
     expect(result.issues, isEmpty);

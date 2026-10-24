@@ -249,6 +249,30 @@ class _EditorPageState extends State<_EditorPage> {
     }
   }
 
+  Future<void> _insertChoice() async {
+    final selection = _source.selection;
+    final start = selection.isValid ? selection.start : _source.text.length;
+    final end = selection.isValid ? selection.end : start;
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) =>
+          _ChoiceComposer(question: _source.text.substring(start, end)),
+    );
+    if (result == null || !mounted) return;
+    final inserted = '\n$result\n';
+    final value = TextEditingValue(
+      text: _source.text.replaceRange(start, end, inserted),
+      selection: TextSelection.collapsed(offset: start + inserted.length),
+    );
+    _source.value = value;
+    _sourceFocus.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _source.text == value.text) _source.value = value;
+    });
+  }
+
   Future<void> _save() async {
     if (_source.text.trim().isEmpty) {
       _toast(context, '先写下一点内容');
@@ -498,6 +522,11 @@ class _EditorPageState extends State<_EditorPage> {
                       icon: const Icon(Icons.space_bar_rounded),
                     ),
                     IconButton(
+                      tooltip: '制作选择题',
+                      onPressed: _insertChoice,
+                      icon: const Icon(Icons.checklist_rounded),
+                    ),
+                    IconButton(
                       tooltip: '公式',
                       onPressed: () => _insert('\n[E##', ']\n', r'E=mc^2'),
                       icon: const Icon(Icons.functions_rounded),
@@ -544,7 +573,7 @@ class _EditorPageState extends State<_EditorPage> {
                             padding: EdgeInsets.all(24),
                             child: SingleChildScrollView(
                               child: SelectableText(
-                                '常用卡片语法\n\n[T#B#加粗]\n[T#!!fff59d#高亮]\n[F#1#挖空答案]\n[P#H1#标题]\n[E##x^2+y^2=z^2]\n[Ref#ID/卡片ID#显示文字]\n---（独立一行分隔答案）\n\n同编号的挖空一起揭晓。普通中括号写成 \\[ 和 \\]。图片和卡片引用可通过工具栏插入；点击引用先预览，再打开详情。未支持的语法会保留原文。',
+                                '常用卡片语法\n\n[T#B#加粗]\n[T#!!fff59d#高亮]\n[F#1#挖空答案]\n[P#H1#标题]\n[E##x^2+y^2=z^2]\n[Ref#ID/卡片ID#显示文字]\n[Choice#multi#\n* 正确选项\n* 另一个正确选项\n- 错误选项\n]\n---（独立一行分隔答案）\n\n选择题默认乱序；添加 fixed 参数保持顺序，multi 表示多选。工具栏可填写题目、选项并勾选正确答案。\n\n同编号的挖空一起揭晓。普通中括号写成 \\[ 和 \\]。图片和卡片引用可通过工具栏插入；点击引用先预览，再打开详情。未支持的语法会保留原文。',
                                 style: TextStyle(height: 1.8),
                               ),
                             ),
@@ -562,6 +591,196 @@ class _EditorPageState extends State<_EditorPage> {
       ),
     );
   }
+}
+
+class _ChoiceComposer extends StatefulWidget {
+  const _ChoiceComposer({required this.question});
+  final String question;
+  @override
+  State<_ChoiceComposer> createState() => _ChoiceComposerState();
+}
+
+class _ChoiceComposerState extends State<_ChoiceComposer> {
+  late final _question = TextEditingController(text: widget.question);
+  final _options = List.generate(3, (_) => TextEditingController());
+  late final _correct = <TextEditingController>{_options.first};
+  bool _multi = false, _random = true;
+  String? _error;
+
+  @override
+  void dispose() {
+    _question.dispose();
+    for (final option in _options) {
+      option.dispose();
+    }
+    super.dispose();
+  }
+
+  void _insert() {
+    if (_options.any((o) => o.text.trim().isEmpty) || _correct.isEmpty) {
+      setState(() => _error = '请填写所有选项，并勾选正确答案。');
+      return;
+    }
+    final params = [if (!_random) 'fixed', if (_multi) 'multi'].join(',');
+    final question = _question.text.trim();
+    final source = StringBuffer();
+    if (question.isNotEmpty) source.writeln(escapeMarkji(question));
+    source.writeln('[Choice#$params#');
+    for (final option in _options) {
+      source.writeln(
+        '${_correct.contains(option) ? '*' : '-'} ${escapeMarkji(option.text.trim())}',
+      );
+    }
+    source.write(']');
+    Navigator.pop(context, source.toString());
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+    child: SizedBox(
+      height: MediaQuery.sizeOf(context).height * .85,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '制作选择题',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '关闭',
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 8,
+                ),
+                children: [
+                  TextField(
+                    controller: _question,
+                    minLines: 1,
+                    maxLines: 3,
+                    decoration: const InputDecoration(labelText: '题目（可选）'),
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('多选题'),
+                    value: _multi,
+                    onChanged: (value) => setState(() {
+                      _multi = value;
+                      if (!value && _correct.length > 1) {
+                        final first = _options.firstWhere(_correct.contains);
+                        _correct
+                          ..clear()
+                          ..add(first);
+                      }
+                    }),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('选项乱序'),
+                    value: _random,
+                    onChanged: (value) => setState(() => _random = value),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('勾选正确答案'),
+                  const SizedBox(height: 8),
+                  for (final (index, option) in _options.indexed)
+                    Padding(
+                      key: ObjectKey(option),
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            semanticLabel: '选项 ${index + 1} 为正确答案',
+                            value: _correct.contains(option),
+                            onChanged: (value) => setState(() {
+                              if (value == true) {
+                                if (!_multi) _correct.clear();
+                                _correct.add(option);
+                              } else {
+                                _correct.remove(option);
+                              }
+                            }),
+                          ),
+                          Expanded(
+                            child: TextField(
+                              controller: option,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.singleLineFormatter,
+                              ],
+                              decoration: InputDecoration(
+                                labelText: '选项 ${index + 1}',
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: '删除选项 ${index + 1}',
+                            onPressed: _options.length <= 2
+                                ? null
+                                : () {
+                                    setState(() {
+                                      _options.remove(option);
+                                      _correct.remove(option);
+                                    });
+                                    option.dispose();
+                                  },
+                            icon: const Icon(
+                              Icons.remove_circle_outline_rounded,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: () =>
+                        setState(() => _options.add(TextEditingController())),
+                    icon: const Icon(Icons.add_rounded),
+                    label: const Text('添加选项'),
+                  ),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        _error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
+              child: FilledButton(
+                onPressed: _insert,
+                child: const Text('插入选择题'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _ReferencePicker extends StatefulWidget {

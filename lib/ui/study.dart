@@ -6,6 +6,12 @@ const _recallChoices = [
   RecallGrade.forgot,
 ];
 
+RecallGrade _choiceGrade(ChoiceOutcome outcome) => switch (outcome) {
+  ChoiceOutcome.correct => RecallGrade.know,
+  ChoiceOutcome.partial => RecallGrade.vague,
+  ChoiceOutcome.incorrect => RecallGrade.forgot,
+};
+
 class _StudyPage extends StatefulWidget {
   const _StudyPage({required this.store});
   final AppStore store;
@@ -19,6 +25,9 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
   DeckData? _deck;
   bool _revealed = false, _busy = true, _undoAvailable = false;
   bool _backwards = false;
+  bool _hasChoices = false;
+  RecallGrade? _choiceSuggestion;
+  var _contentKey = GlobalKey<ContentViewState>();
   double _swipeDistance = 0;
   int _turn = 0;
   final _watch = Stopwatch();
@@ -60,6 +69,11 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
           _card = card;
           _deck = deck;
           _revealed = false;
+          _hasChoices =
+              card != null &&
+              MarkjiParser().parse(card.source).questionChoices.isNotEmpty;
+          _choiceSuggestion = null;
+          _contentKey = GlobalKey<ContentViewState>();
           _busy = false;
           _undoAvailable = undo;
           _backwards = backwards;
@@ -75,6 +89,19 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
         _toast(context, '$e');
       }
     }
+  }
+
+  void _reveal() {
+    ChoiceOutcome? outcome;
+    if (_hasChoices) {
+      outcome = _contentKey.currentState!.submitChoices();
+      if (outcome == null) return;
+    }
+    if (widget.store.preferences.studyHaptics) HapticFeedback.lightImpact();
+    setState(() {
+      _revealed = true;
+      _choiceSuggestion = outcome == null ? null : _choiceGrade(outcome);
+    });
   }
 
   Future<void> _grade(RecallGrade grade) async {
@@ -367,6 +394,7 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
                                         ),
                                         const SizedBox(height: 24),
                                         ContentView(
+                                          key: _contentKey,
                                           source: card.source,
                                           store: widget.store,
                                           revealed: _revealed,
@@ -379,7 +407,9 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
                                                 .preferences
                                                 .showRecallHint)
                                           Text(
-                                            '先在心里回忆一下答案',
+                                            _hasChoices
+                                                ? '选择答案，提交后查看解析'
+                                                : '先在心里回忆一下答案',
                                             style: TextStyle(
                                               fontSize: 12,
                                               color: c.onSurfaceVariant,
@@ -402,26 +432,24 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
                                   reveal: SizedBox(
                                     width: double.infinity,
                                     child: FilledButton.icon(
-                                      onPressed: () {
-                                        if (widget
-                                            .store
-                                            .preferences
-                                            .studyHaptics) {
-                                          HapticFeedback.lightImpact();
-                                        }
-                                        setState(() => _revealed = true);
-                                      },
-                                      icon: const Icon(
-                                        Icons.visibility_outlined,
+                                      onPressed: _reveal,
+                                      icon: Icon(
+                                        _hasChoices
+                                            ? Icons.fact_check_outlined
+                                            : Icons.visibility_outlined,
                                       ),
-                                      label: const Text('揭晓答案'),
+                                      label: Text(
+                                        _hasChoices ? '提交答案' : '揭晓答案',
+                                      ),
                                     ),
                                   ),
                                   rating: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(
-                                        stage == 'relearn'
+                                        _choiceSuggestion != null
+                                            ? '建议评分：${_choiceSuggestion!.label} · 可按实际记忆调整'
+                                            : stage == 'relearn'
                                             ? '这次练习不会改变长期排期'
                                             : '刚才，你记得怎么样？',
                                         style: TextStyle(
@@ -462,6 +490,12 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
                                                     ),
                                                 backgroundColor: colors.$1,
                                                 foregroundColor: colors.$2,
+                                                side: g == _choiceSuggestion
+                                                    ? BorderSide(
+                                                        color: colors.$2,
+                                                        width: 2,
+                                                      )
+                                                    : BorderSide.none,
                                               ),
                                               onPressed: () => _grade(g),
                                               child: Column(

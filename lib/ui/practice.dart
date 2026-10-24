@@ -234,6 +234,9 @@ class _PracticePageState extends State<_PracticePage> {
   StudyCard? _card;
   final _elapsed = Stopwatch();
   bool _busy = true, _revealed = false;
+  bool _hasChoices = false;
+  RecallGrade? _choiceSuggestion;
+  var _contentKey = GlobalKey<ContentViewState>();
   @override
   void initState() {
     super.initState();
@@ -251,6 +254,11 @@ class _PracticePageState extends State<_PracticePage> {
           _session = session;
           _card = card;
           _revealed = false;
+          _hasChoices =
+              card != null &&
+              MarkjiParser().parse(card.source).questionChoices.isNotEmpty;
+          _choiceSuggestion = null;
+          _contentKey = GlobalKey<ContentViewState>();
           _busy = false;
           _elapsed
             ..reset()
@@ -264,6 +272,19 @@ class _PracticePageState extends State<_PracticePage> {
         _toast(context, '$e');
       }
     }
+  }
+
+  void _reveal() {
+    ChoiceOutcome? outcome;
+    if (_hasChoices) {
+      outcome = _contentKey.currentState!.submitChoices();
+      if (outcome == null) return;
+    }
+    if (widget.store.preferences.studyHaptics) HapticFeedback.lightImpact();
+    setState(() {
+      _revealed = true;
+      _choiceSuggestion = outcome == null ? null : _choiceGrade(outcome);
+    });
   }
 
   Future<void> _grade(RecallGrade grade) => _action(context, () async {
@@ -355,15 +376,15 @@ class _PracticePageState extends State<_PracticePage> {
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,
                                   children: [
-                                    const Text(
-                                      '先主动回忆，再揭晓答案',
-                                      style: TextStyle(fontSize: 12),
+                                    Text(
+                                      _hasChoices
+                                          ? '选择答案，提交后查看解析'
+                                          : '先主动回忆，再揭晓答案',
+                                      style: const TextStyle(fontSize: 12),
                                     ),
                                     const SizedBox(height: 20),
                                     ContentView(
-                                      key: ValueKey(
-                                        '${card.id}-${session.attempts}',
-                                      ),
+                                      key: _contentKey,
                                       source: card.source,
                                       store: widget.store,
                                       revealed: _revealed,
@@ -374,6 +395,20 @@ class _PracticePageState extends State<_PracticePage> {
                             ),
                           ),
                         ),
+                        if (_revealed && _choiceSuggestion != null)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 4,
+                            ),
+                            child: Text(
+                              '建议评分：${_choiceSuggestion!.label} · 可按实际记忆调整',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: c.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                           child: _revealed
@@ -389,6 +424,12 @@ class _PracticePageState extends State<_PracticePage> {
                                               horizontal: 8,
                                               vertical: 14,
                                             ),
+                                            side: grade == _choiceSuggestion
+                                                ? BorderSide(
+                                                    color: c.primary,
+                                                    width: 2,
+                                                  )
+                                                : BorderSide.none,
                                           ),
                                           onPressed: _busy
                                               ? null
@@ -402,19 +443,13 @@ class _PracticePageState extends State<_PracticePage> {
                               : SizedBox(
                                   width: double.infinity,
                                   child: FilledButton.icon(
-                                    onPressed: _busy
-                                        ? null
-                                        : () {
-                                            if (widget
-                                                .store
-                                                .preferences
-                                                .studyHaptics) {
-                                              HapticFeedback.lightImpact();
-                                            }
-                                            setState(() => _revealed = true);
-                                          },
-                                    icon: const Icon(Icons.visibility_outlined),
-                                    label: const Text('揭晓答案'),
+                                    onPressed: _busy ? null : _reveal,
+                                    icon: Icon(
+                                      _hasChoices
+                                          ? Icons.fact_check_outlined
+                                          : Icons.visibility_outlined,
+                                    ),
+                                    label: Text(_hasChoices ? '提交答案' : '揭晓答案'),
                                   ),
                                 ),
                         ),

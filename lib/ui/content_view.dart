@@ -41,20 +41,65 @@ class ContentView extends StatefulWidget {
   /// 尚未写入媒体库的图片，例如导入预览中的文件。
   final Map<String, Uint8List> pendingMedia;
   @override
-  State<ContentView> createState() => _ContentViewState();
+  State<ContentView> createState() => ContentViewState();
 }
 
-class _ContentViewState extends State<ContentView> {
+class _ChoiceAttempt {
+  _ChoiceAttempt(this.question)
+    : order = List.generate(question.options.length, (i) => i) {
+    if (!question.fixed) order.shuffle();
+  }
+  final ChoiceQuestion question;
+  final List<int> order;
+  final selected = <int>{};
+  bool submitted = false;
+}
+
+class ContentViewState extends State<ContentView> {
   final _groups = <String>{};
   late ParsedContent _parsed = MarkjiParser().parse(widget.source);
+  late Map<int, _ChoiceAttempt> _choices = _choiceAttempts();
+  bool _missingChoice = false;
+
+  Map<int, _ChoiceAttempt> _choiceAttempts() => {
+    for (final node in _parsed.nodes)
+      if (node.choice != null) node.offset: _ChoiceAttempt(node.choice!),
+  };
+
+  /// 提交题面上的选择题；整卡按最需要巩固的一题给出评分建议。
+  ChoiceOutcome? submitChoices() {
+    final questions = _parsed.questionChoices
+        .map((n) => _choices[n.offset]!)
+        .toList();
+    if (questions.any((q) => q.selected.isEmpty)) {
+      setState(() => _missingChoice = true);
+      return null;
+    }
+    setState(() {
+      _missingChoice = false;
+      for (final question in questions) {
+        question.submitted = true;
+      }
+    });
+    return questions
+        .map((q) => q.question.evaluate(q.selected))
+        .reduce((a, b) => a.index > b.index ? a : b);
+  }
+
   @override
-  void didUpdateWidget(ContentView old) {
-    super.didUpdateWidget(old);
-    if (old.source != widget.source) {
+  void didUpdateWidget(ContentView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.source != widget.source) {
       _parsed = MarkjiParser().parse(widget.source);
       _groups.clear();
+      _choices = _choiceAttempts();
+      _missingChoice = false;
     }
-    if (old.revealed && !widget.revealed) _groups.clear();
+    if (oldWidget.revealed && !widget.revealed) {
+      _groups.clear();
+      _choices = _choiceAttempts();
+      _missingChoice = false;
+    }
   }
 
   Future<void> _reference(ContentNode node) async {
@@ -208,6 +253,9 @@ class _ContentViewState extends State<ContentView> {
             ),
           ),
         );
+      } else if (n.choice != null) {
+        flush();
+        widgets.add(_choice(n));
       } else if (n.kind == 'E') {
         flush();
         widgets.add(
@@ -293,8 +341,177 @@ class _ContentViewState extends State<ContentView> {
     );
   }
 
+  Widget _choice(ContentNode node) {
+    final attempt = _choices[node.offset]!;
+    final question = attempt.question;
+    final colors = Theme.of(context).colorScheme;
+    final answered = attempt.submitted || widget.revealed;
+    final outcome = attempt.submitted
+        ? question.evaluate(attempt.selected)
+        : null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            question.multi ? '多选题' : '单选题',
+            style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+          ),
+          const SizedBox(height: 10),
+          for (final (position, index) in attempt.order.indexed) ...[
+            if (position > 0) const SizedBox(height: 8),
+            Builder(
+              builder: (context) {
+                final option = question.options[index];
+                final selected = attempt.selected.contains(index);
+                final correct = answered && option.correct;
+                final wrong = answered && selected && !option.correct;
+                final background = wrong
+                    ? colors.errorContainer
+                    : correct || selected
+                    ? colors.primaryContainer
+                    : colors.surfaceContainerHighest.withValues(alpha: .6);
+                final foreground = wrong
+                    ? colors.onErrorContainer
+                    : correct || selected
+                    ? colors.onPrimaryContainer
+                    : colors.onSurface;
+                final shape = RoundedSuperellipseBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  side: BorderSide(
+                    color: correct || selected
+                        ? foreground.withValues(alpha: .5)
+                        : colors.outlineVariant.withValues(alpha: .4),
+                  ),
+                );
+                return Semantics(
+                  selected: selected,
+                  button: !answered && widget.interactive,
+                  label: correct
+                      ? '正确答案'
+                      : wrong
+                      ? '你的答案，错误'
+                      : null,
+                  child: Material(
+                    color: background,
+                    shape: shape,
+                    clipBehavior: Clip.antiAlias,
+                    animationDuration: MediaQuery.disableAnimationsOf(context)
+                        ? Duration.zero
+                        : const Duration(milliseconds: 160),
+                    child: InkWell(
+                      customBorder: shape,
+                      onTap: answered || !widget.interactive
+                          ? null
+                          : () => setState(() {
+                              if (question.multi) {
+                                selected
+                                    ? attempt.selected.remove(index)
+                                    : attempt.selected.add(index);
+                              } else {
+                                attempt.selected
+                                  ..clear()
+                                  ..add(index);
+                              }
+                            }),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 13,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${position < 26 ? String.fromCharCode(65 + position) : position + 1}.',
+                              style: TextStyle(
+                                color: foreground,
+                                fontWeight: FontWeight.w600,
+                                fontSize: widget.store.preferences.fontSize,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text.rich(
+                                TextSpan(
+                                  children: option.nodes.map(_span).toList(),
+                                ),
+                                style: TextStyle(
+                                  color: foreground,
+                                  fontSize: widget.store.preferences.fontSize,
+                                  height: 1.5,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(
+                              wrong
+                                  ? Icons.cancel_outlined
+                                  : correct
+                                  ? Icons.check_circle_rounded
+                                  : question.multi
+                                  ? (selected
+                                        ? Icons.check_box_rounded
+                                        : Icons.check_box_outline_blank_rounded)
+                                  : selected
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_unchecked,
+                              color: foreground,
+                              size: 22,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+          if (_missingChoice && attempt.selected.isEmpty && !answered) ...[
+            const SizedBox(height: 8),
+            Text(
+              '请选择答案后再提交',
+              style: TextStyle(color: colors.error, fontSize: 13),
+            ),
+          ],
+          if (outcome != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              switch (outcome) {
+                ChoiceOutcome.correct => '答对了',
+                ChoiceOutcome.partial => '漏选了正确选项',
+                ChoiceOutcome.incorrect => '答错了，已标出正确答案',
+              },
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: outcome == ChoiceOutcome.incorrect
+                    ? colors.error
+                    : colors.primary,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   InlineSpan _span(ContentNode n) {
     final colors = Theme.of(context).colorScheme;
+    if (n.kind == 'E') {
+      return WidgetSpan(
+        alignment: PlaceholderAlignment.middle,
+        child: Math.tex(
+          n.text,
+          textStyle: TextStyle(
+            fontSize: widget.store.preferences.fontSize,
+            color: colors.onSurface,
+          ),
+          onErrorFallback: (_) => Text(n.text),
+        ),
+      );
+    }
     if (n.kind == 'Ref' || n.kind == 'Card') {
       return WidgetSpan(
         alignment: PlaceholderAlignment.middle,

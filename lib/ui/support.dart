@@ -116,19 +116,25 @@ class _AboutPage extends StatelessWidget {
                 _AboutEntry(
                   icon: Icons.verified_user_outlined,
                   title: '协议与政策',
-                  onTap: () => _push(context, const _PoliciesPage()),
+                  page: const _PoliciesPage(),
                 ),
                 const Divider(height: 1, indent: 72, endIndent: 16),
                 _AboutEntry(
                   icon: Icons.help_outline_rounded,
                   title: '帮助与反馈',
-                  onTap: () => _push(context, const _HelpPage()),
+                  page: const _HelpPage(),
                 ),
                 const Divider(height: 1, indent: 72, endIndent: 16),
                 _AboutEntry(
                   icon: Icons.balance_rounded,
                   title: '开源许可',
-                  onTap: () => _licenses(context),
+                  radius: const BorderRadius.vertical(
+                    bottom: Radius.circular(24),
+                  ),
+                  page: const LicensePage(
+                    applicationName: 'OpenMarkji',
+                    applicationVersion: appDisplayVersion,
+                  ),
                 ),
               ],
             ),
@@ -177,16 +183,31 @@ class _AboutEntry extends StatelessWidget {
   const _AboutEntry({
     required this.icon,
     required this.title,
-    required this.onTap,
+    this.onTap,
+    this.page,
+    this.radius = BorderRadius.zero,
     this.external = false,
   });
   final IconData icon;
   final String title;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
+  final Widget? page;
+  final BorderRadius radius;
   final bool external;
 
   @override
-  Widget build(BuildContext context) => ListTile(
+  Widget build(BuildContext context) {
+    final destination = page;
+    return destination == null
+        ? _tile(context, onTap)
+        : _SettingsPageLink(
+            page: destination,
+            radius: radius,
+            builder: (onTap) => _tile(context, onTap),
+          );
+  }
+
+  Widget _tile(BuildContext context, VoidCallback? onTap) => ListTile(
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
     leading: Container(
       width: 40,
@@ -212,10 +233,22 @@ class _AboutEntry extends StatelessWidget {
   );
 }
 
+Widget _supportPageTile(
+  IconData icon,
+  String title,
+  Widget page, {
+  String? subtitle,
+  BorderRadius radius = BorderRadius.zero,
+}) => _SettingsPageLink(
+  page: page,
+  radius: radius,
+  builder: (onTap) => _supportTile(icon, title, onTap, subtitle: subtitle),
+);
+
 Widget _supportTile(
   IconData icon,
   String title,
-  VoidCallback onTap, {
+  VoidCallback? onTap, {
   String? subtitle,
 }) => ListTile(
   leading: Icon(icon, size: 22),
@@ -481,53 +514,51 @@ class _PoliciesPage extends StatelessWidget {
         _AppearanceCard(
           child: Column(
             children: [
-              _supportTile(
+              _supportPageTile(
                 Icons.privacy_tip_outlined,
                 '隐私与数据说明',
-                () => _push(
-                  context,
-                  const _InformationPage(
-                    title: '隐私与数据说明',
-                    sections: [
-                      (
-                        '本地保存',
-                        '卡片、图片、学习记录和偏好设置保存在当前设备或浏览器的本地存储中，无需注册账号。当前版本没有内置广告或统计上报。',
-                      ),
-                      (
-                        '你主动使用的联网功能',
-                        '卡片中的外部链接和远程图片可能连接对应网站。点击检查更新时，应用会请求版本信息。WebDAV 仅在你主动连接、备份或恢复时访问所填服务器；上传的是完整备份，连接密码仅保存在本机，不随备份导出。',
-                      ),
-                      (
-                        '备份与反馈',
-                        '导出的备份包含卡片、媒体和学习记录，请自行保管。反馈报告包含版本、平台及你填写的问题。日志仅在你开启捕捉后记录操作摘要和异常，不会自动上传；复制或导出后由你决定如何分享。',
-                      ),
-                      ('删除数据', '你可以在牌组中删除卡片或牌组。卸载应用或清除网站数据可能移除本地资料，操作前请先导出备份。'),
-                    ],
-                  ),
+                const _InformationPage(
+                  title: '隐私与数据说明',
+                  sections: [
+                    (
+                      '本地保存',
+                      '卡片、图片、学习记录和偏好设置保存在当前设备或浏览器的本地存储中，无需注册账号。当前版本没有内置广告或统计上报。',
+                    ),
+                    (
+                      '你主动使用的联网功能',
+                      '卡片中的外部链接和远程图片可能连接对应网站。点击检查更新时，应用会请求版本信息。WebDAV 仅在你主动连接、备份或恢复时访问所填服务器；上传的是完整备份，连接密码仅保存在本机，不随备份导出。',
+                    ),
+                    (
+                      '备份与反馈',
+                      '导出的备份包含卡片、媒体和学习记录，请自行保管。反馈报告包含版本、平台及你填写的问题。日志仅在你开启捕捉后记录操作摘要和异常，不会自动上传；复制或导出后由你决定如何分享。',
+                    ),
+                    ('删除数据', '你可以在牌组中删除卡片或牌组。卸载应用或清除网站数据可能移除本地资料，操作前请先导出备份。'),
+                  ],
                 ),
+                radius: const BorderRadius.vertical(top: Radius.circular(24)),
               ),
-              _supportTile(
+              _supportPageTile(
                 Icons.description_outlined,
                 '使用说明与条款',
-                () => _push(
-                  context,
-                  const _InformationPage(
-                    title: '使用说明与条款',
-                    sections: [
-                      (
-                        '应用用途',
-                        'OpenMarkji 提供个人制卡、学习计划、记忆调度和学习统计。学习效果取决于内容与使用方式，排期仅作为学习辅助。',
-                      ),
-                      (
-                        '资料与备份',
-                        '请确保你有权使用导入或分享的资料。应用使用本地存储，请定期备份；恢复备份会替换当前资料，并保留一份恢复前的数据供导出。',
-                      ),
-                      (
-                        '开源许可',
-                        'GNU General Public License v3.0（GPL-3.0）是自由软件许可证。协议原文可在“关于 → 开源许可 → GPL-3.0”中查看。',
-                      ),
-                    ],
-                  ),
+                const _InformationPage(
+                  title: '使用说明与条款',
+                  sections: [
+                    (
+                      '应用用途',
+                      'OpenMarkji 提供个人制卡、学习计划、记忆调度和学习统计。学习效果取决于内容与使用方式，排期仅作为学习辅助。',
+                    ),
+                    (
+                      '资料与备份',
+                      '请确保你有权使用导入或分享的资料。应用使用本地存储，请定期备份；恢复备份会替换当前资料，并保留一份恢复前的数据供导出。',
+                    ),
+                    (
+                      '开源许可',
+                      'GNU General Public License v3.0（GPL-3.0）是自由软件许可证。协议原文可在“关于 → 开源许可 → GPL-3.0”中查看。',
+                    ),
+                  ],
+                ),
+                radius: const BorderRadius.vertical(
+                  bottom: Radius.circular(24),
                 ),
               ),
             ],
@@ -618,17 +649,21 @@ class _HelpPage extends StatelessWidget {
         _AppearanceCard(
           child: Column(
             children: [
-              _supportTile(
+              _supportPageTile(
                 Icons.edit_note_rounded,
                 '问题反馈与功能建议',
-                () => _push(context, const _FeedbackPage()),
+                const _FeedbackPage(),
                 subtitle: '填写问题，复制或导出反馈报告',
+                radius: const BorderRadius.vertical(top: Radius.circular(24)),
               ),
-              _supportTile(
+              _supportPageTile(
                 Icons.bug_report_outlined,
                 '捕捉日志',
-                () => _push(context, const _DiagnosticsPage()),
+                const _DiagnosticsPage(),
                 subtitle: '记录复现步骤和异常，预览、复制或导出',
+                radius: const BorderRadius.vertical(
+                  bottom: Radius.circular(24),
+                ),
               ),
             ],
           ),

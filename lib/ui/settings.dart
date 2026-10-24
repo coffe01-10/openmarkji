@@ -102,7 +102,7 @@ BorderRadius _settingsRowRadius(int index, int length) {
   return BorderRadius.zero;
 }
 
-class _SettingsLink extends StatefulWidget {
+class _SettingsLink extends StatelessWidget {
   const _SettingsLink({
     required this.icon,
     required this.title,
@@ -118,10 +118,36 @@ class _SettingsLink extends StatefulWidget {
   final bool divided;
 
   @override
-  State<_SettingsLink> createState() => _SettingsLinkState();
+  Widget build(BuildContext context) => _SettingsPageLink(
+    page: page,
+    radius: radius,
+    builder: (onTap) => _SettingsTile(
+      icon: icon,
+      title: title,
+      radius: radius,
+      divided: divided,
+      onTap: onTap,
+    ),
+  );
 }
 
-class _SettingsLinkState extends State<_SettingsLink> {
+/// 所有层级的设置入口共享同一段行展开与返回收回动画。
+class _SettingsPageLink extends StatefulWidget {
+  const _SettingsPageLink({
+    required this.page,
+    required this.radius,
+    required this.builder,
+  });
+
+  final Widget page;
+  final BorderRadius radius;
+  final Widget Function(VoidCallback? onTap) builder;
+
+  @override
+  State<_SettingsPageLink> createState() => _SettingsPageLinkState();
+}
+
+class _SettingsPageLinkState extends State<_SettingsPageLink> {
   final _key = GlobalKey();
   double? _holdHeight;
   Animation<double>? _closing;
@@ -163,12 +189,11 @@ class _SettingsLinkState extends State<_SettingsLink> {
     );
   }
 
-  Widget _tile({VoidCallback? onTap}) => _SettingsTile(
-    icon: widget.icon,
-    title: widget.title,
-    radius: widget.radius,
-    divided: widget.divided,
-    onTap: onTap,
+  Widget _tile({VoidCallback? onTap}) => Material(
+    color: _settingsCard(Theme.of(context).colorScheme),
+    shape: RoundedSuperellipseBorder(borderRadius: widget.radius),
+    clipBehavior: Clip.antiAlias,
+    child: widget.builder(onTap),
   );
 
   Future<void> _open() async {
@@ -798,16 +823,20 @@ class _BackupPageState extends State<_BackupPage> {
           ),
           const SizedBox(height: 16),
           _AppearanceCard(
-            child: ListTile(
-              enabled: !_working,
-              leading: const Icon(Icons.cloud_outlined),
-              title: const Text('WebDAV 备份'),
-              subtitle: const Text(
-                '连接服务器，上传或恢复完整备份',
-                style: TextStyle(fontSize: 12),
+            child: _SettingsPageLink(
+              page: _WebDavPage(store: widget.store),
+              radius: BorderRadius.circular(24),
+              builder: (onTap) => ListTile(
+                enabled: !_working,
+                leading: const Icon(Icons.cloud_outlined),
+                title: const Text('WebDAV 备份'),
+                subtitle: const Text(
+                  '连接服务器，上传或恢复完整备份',
+                  style: TextStyle(fontSize: 12),
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _working ? null : onTap,
               ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _push(context, _WebDavPage(store: widget.store)),
             ),
           ),
         ],
