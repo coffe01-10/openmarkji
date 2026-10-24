@@ -69,6 +69,15 @@ class ParsedContent {
   }
 
   String get plainText => nodes.map(_plain).join();
+
+  /// 题面与答案分开的纯文本，用于列表预览。
+  String get questionText =>
+      nodes.takeWhile((n) => n.kind != 'answer').map(_plain).join();
+  String get answerText => nodes
+      .skipWhile((n) => n.kind != 'answer')
+      .skip(1)
+      .map((n) => n.kind == 'answer' ? ' ' : _plain(n))
+      .join();
   static String _plain(ContentNode n) => n.kind == 'answer'
       ? '\n答案\n'
       : n.kind == 'Pic'

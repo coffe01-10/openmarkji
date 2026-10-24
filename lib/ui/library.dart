@@ -707,6 +707,8 @@ class _DeckPageState extends State<_DeckPage>
   bool _enrolling = false;
   Future<void>? _refreshing;
   int _generation = 0;
+  int? _total;
+  Timer? _searchTimer;
   @override
   void initState() {
     super.initState();
@@ -721,6 +723,7 @@ class _DeckPageState extends State<_DeckPage>
   @override
   void dispose() {
     _endSelection();
+    _searchTimer?.cancel();
     widget.store.removeListener(_refresh);
     _scroll.dispose();
     super.dispose();
@@ -749,12 +752,23 @@ class _DeckPageState extends State<_DeckPage>
         offset: replace ? 0 : _cards.length,
         limit: limit,
       );
+      final total = replace
+          ? await widget.store.cardCount(
+              deckId: widget.deckId,
+              search: _search,
+              chapter: _chapter,
+              plan: _plan,
+              tag: _tag,
+              focus: _focus,
+            )
+          : _total;
       final deck = await widget.store.deck(widget.deckId);
       final tags = await widget.store.tags(widget.deckId);
       if (mounted && gen == _generation) {
         setState(() {
           _cards = replace ? values : [..._cards, ...values];
           _more = values.length == limit;
+          _total = total;
           _deck = deck;
           _tags = tags;
           _loading = false;
@@ -771,12 +785,40 @@ class _DeckPageState extends State<_DeckPage>
 
   void _filter(VoidCallback update) {
     if (_enrolling) return;
+    _searchTimer?.cancel();
     setState(() {
       update();
       _cards = [];
+      _total = null;
+      _more = true;
     });
     _refresh();
   }
+
+  /// 输入时稍等片刻再查询，连续打字不会每个字母都重排一次列表。
+  void _searchChanged(String value) {
+    final query = value.trim();
+    _searchTimer?.cancel();
+    if (query == _search) return;
+    _searchTimer = Timer(
+      const Duration(milliseconds: 220),
+      () => _filter(() => _search = query),
+    );
+  }
+
+  bool get _filtered =>
+      _search.isNotEmpty ||
+      _chapter != null ||
+      _plan != null ||
+      _tag != null ||
+      _focus != null;
+
+  void _clearFilters() => _filter(() {
+    _chapter = null;
+    _plan = null;
+    _tag = null;
+    _focus = null;
+  });
 
   double get _rowExtent =>
       math.max(56, MediaQuery.textScalerOf(context).scale(14) * 1.4 + 20);
@@ -957,6 +999,51 @@ class _DeckPageState extends State<_DeckPage>
       if (mounted) _toast(context, '$e');
       return false;
     }
+  }
+
+  /// 单行预览：题面醒目、答案弱化，搜索时标出命中的关键词。
+  Widget _cardPreview(StudyCard card, ColorScheme c) {
+    final parsed = MarkjiParser().parse(card.source);
+    String clean(String text) => text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final question = clean(parsed.questionText);
+    final answer = clean(parsed.answerText);
+    final mark = TextStyle(
+      backgroundColor: c.primaryContainer,
+      color: c.onPrimaryContainer,
+    );
+    List<TextSpan> highlight(String text, TextStyle style) {
+      final at = _search.isEmpty
+          ? -1
+          : text.toLowerCase().indexOf(_search.toLowerCase());
+      if (at < 0) return [TextSpan(text: text, style: style)];
+      final end = at + _search.length;
+      return [
+        TextSpan(text: text.substring(0, at), style: style),
+        TextSpan(text: text.substring(at, end), style: style.merge(mark)),
+        TextSpan(text: text.substring(end), style: style),
+      ];
+    }
+
+    return Text.rich(
+      TextSpan(
+        children: [
+          ...highlight(
+            question.isEmpty ? '（空白题面）' : question,
+            TextStyle(color: c.onSurface, fontWeight: FontWeight.w600),
+          ),
+          if (answer.isNotEmpty) ...[
+            const TextSpan(text: '  '),
+            ...highlight(
+              answer.length > 140 ? '${answer.substring(0, 140)}…' : answer,
+              TextStyle(color: c.onSurfaceVariant),
+            ),
+          ],
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(fontSize: 14, height: 1.4),
+    );
   }
 
   @override
@@ -1185,8 +1272,7 @@ class _DeckPageState extends State<_DeckPage>
                                         ),
                                         const SizedBox(height: 14),
                                         _GlassSearchField(
-                                          onChanged: (s) =>
-                                              _filter(() => _search = s),
+                                          onChanged: _searchChanged,
                                           hint: '搜索内容或标签',
                                           dense: true,
                                         ),
@@ -1268,6 +1354,18 @@ class _DeckPageState extends State<_DeckPage>
                                                   '${_tag ?? '标签'} ▾',
                                                 ),
                                               ),
+                                            if (_chapter != null ||
+                                                _tag != null ||
+                                                _focus != null)
+                                              _GlassChoice(
+                                                label: '清除',
+                                                icon: Icons.close_rounded,
+                                                onPressed: () => _filter(() {
+                                                  _chapter = null;
+                                                  _tag = null;
+                                                  _focus = null;
+                                                }),
+                                              ),
                                           ],
                                         ),
                                       ],
@@ -1284,13 +1382,36 @@ class _DeckPageState extends State<_DeckPage>
                             child: Padding(
                               padding: const EdgeInsets.all(20),
                               child: _Empty(
-                                icon: Icons.note_add_outlined,
-                                title: _focus == null ? '这里还没有卡片' : '当前筛选没有卡片',
+                                icon: _search.isNotEmpty
+                                    ? Icons.search_off_rounded
+                                    : _filtered
+                                    ? Icons.filter_alt_off_outlined
+                                    : Icons.note_add_outlined,
+                                title: _search.isNotEmpty
+                                    ? '没有找到“$_search”'
+                                    : _filtered
+                                    ? '当前筛选没有卡片'
+                                    : '这里还没有卡片',
                                 detail: _focus == 'favorite'
                                     ? '点亮卡片右侧的星标，把重点收进收藏。'
                                     : _focus == 'difficult'
                                     ? '最近一次正式评分为“忘记”或“模糊”的卡片会出现在这里。'
+                                    : _search.isNotEmpty
+                                    ? '可以搜索单词、释义或标签，也可以换个关键词试试。'
+                                    : _filtered
+                                    ? '换个筛选条件，或清除筛选查看全部卡片。'
                                     : '新建或导入卡片后，勾选卡片即可加入学习计划。',
+                                action:
+                                    _chapter != null ||
+                                        _plan != null ||
+                                        _tag != null ||
+                                        _focus != null
+                                    ? _GlassChoice(
+                                        label: '清除筛选',
+                                        icon: Icons.filter_alt_off_outlined,
+                                        onPressed: _clearFilters,
+                                      )
+                                    : null,
                               ),
                             ),
                           )
@@ -1381,17 +1502,29 @@ class _DeckPageState extends State<_DeckPage>
                                                   'paused' => '已暂停',
                                                   _ => '未加入计划',
                                                 }}${card.tags.isEmpty ? '' : ' · ${card.tags.join(' / ')}'}',
+                                            child: _cardPreview(card, c),
+                                          ),
+                                        ),
+                                        if (_plan == null &&
+                                            card.plan != 'library')
+                                          Padding(
+                                            padding: const EdgeInsets.only(
+                                              left: 8,
+                                            ),
                                             child: Text(
-                                              _short(card.source, 140),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                fontSize: 14,
-                                                height: 1.4,
+                                              card.plan == 'paused'
+                                                  ? '暂停'
+                                                  : card.isNew
+                                                  ? '待学'
+                                                  : '学习中',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: card.plan == 'paused'
+                                                    ? c.onSurfaceVariant
+                                                    : c.primary,
                                               ),
                                             ),
                                           ),
-                                        ),
                                         _FavoriteButton(
                                           store: widget.store,
                                           card: card,
@@ -1486,27 +1619,29 @@ class _DeckPageState extends State<_DeckPage>
                           children: [
                             _GlassChoice(
                               label: '全选筛选结果',
-                              onPressed: () => _action(context, () async {
-                                final rows = await widget.store.cards(
-                                  deckId: widget.deckId,
-                                  search: _search,
-                                  chapter: _chapter,
-                                  plan: _plan,
-                                  tag: _tag,
-                                  focus: _focus,
-                                  limit: 1000000,
-                                );
-                                if (mounted) {
-                                  setState(
-                                    () =>
-                                        _selected.addAll(rows.map((c) => c.id)),
-                                  );
-                                }
-                              }),
+                              onPressed: _cards.isEmpty
+                                  ? null
+                                  : () => _action(context, () async {
+                                      final ids = await widget.store.cardIds(
+                                        deckId: widget.deckId,
+                                        search: _search,
+                                        chapter: _chapter,
+                                        plan: _plan,
+                                        tag: _tag,
+                                        focus: _focus,
+                                      );
+                                      if (mounted) {
+                                        setState(() => _selected.addAll(ids));
+                                      }
+                                    }),
                             ),
                             const Spacer(),
                             Text(
-                              '${_cards.length}${_more ? '+' : ''} 张',
+                              _total == null
+                                  ? ''
+                                  : _filtered
+                                  ? '筛选出 $_total 张'
+                                  : '共 $_total 张',
                               style: TextStyle(
                                 color: c.onSurfaceVariant,
                                 fontSize: 12,

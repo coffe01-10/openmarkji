@@ -283,23 +283,22 @@ class AppStore extends ChangeNotifier {
     }
   }
 
-  Future<List<StudyCard>> cards({
+  /// 牌组卡片列表、计数和全选共用同一套筛选条件。
+  (String, List<Object>) _cardFilter({
     required String deckId,
     String search = '',
     String? chapter,
     String? plan,
     String? tag,
     String? focus,
-    bool randomOrder = false,
-    int offset = 0,
-    int limit = 60,
-  }) async {
+  }) {
     var sql =
-        'SELECT cards.payload FROM cards JOIN card_decks ON card_decks.card_id=cards.id WHERE card_decks.deck_id=?';
+        ' FROM cards JOIN card_decks ON card_decks.card_id=cards.id WHERE card_decks.deck_id=?';
     final args = <Object>[deckId];
-    if (search.isNotEmpty) {
+    final query = search.trim();
+    if (query.isNotEmpty) {
       sql += ' AND (instr(lower(search_text),lower(?))>0 OR instr(lower(tags),lower(?))>0)';
-      args.addAll([search, search]);
+      args.addAll([query, query]);
     }
     if (chapter != null) {
       sql += ' AND chapter=?';
@@ -320,13 +319,86 @@ class AppStore extends ChangeNotifier {
       // replaces that evidence or changes its next scheduled review.
       sql += " AND (SELECT grade FROM reviews WHERE card_id=cards.id AND kind='formal' ORDER BY reviewed_at DESC,rowid DESC LIMIT 1) IN (2,3)";
     }
-    sql +=
-        ' ORDER BY ${randomOrder ? 'random()' : 'cards.rowid'} LIMIT ? OFFSET ?';
-    args.addAll([limit, offset]);
-    return (await db.rows(
-      sql,
+    return (sql, args);
+  }
+
+  Future<List<StudyCard>> cards({
+    required String deckId,
+    String search = '',
+    String? chapter,
+    String? plan,
+    String? tag,
+    String? focus,
+    bool randomOrder = false,
+    int offset = 0,
+    int limit = 60,
+  }) async {
+    final (filter, args) = _cardFilter(
+      deckId: deckId,
+      search: search,
+      chapter: chapter,
+      plan: plan,
+      tag: tag,
+      focus: focus,
+    );
+    final query = search.trim();
+    // 搜索单词时，以关键词开头的卡片排在前面，其余保持原有顺序。
+    final order = randomOrder
+        ? 'random()'
+        : query.isEmpty
+        ? 'cards.rowid'
+        : 'instr(lower(search_text),lower(?))<>1,cards.rowid';
+    final sql = 'SELECT cards.payload$filter ORDER BY $order LIMIT ? OFFSET ?';
+    return (await db.rows(sql, [
+      ...args,
+      if (!randomOrder && query.isNotEmpty) query,
+      limit,
+      offset,
+    ])).map((r) => StudyCard.fromJson(decodeObject(r['payload']))).toList();
+  }
+
+  Future<int> cardCount({
+    required String deckId,
+    String search = '',
+    String? chapter,
+    String? plan,
+    String? tag,
+    String? focus,
+  }) async {
+    final (filter, args) = _cardFilter(
+      deckId: deckId,
+      search: search,
+      chapter: chapter,
+      plan: plan,
+      tag: tag,
+      focus: focus,
+    );
+    final rows = await db.rows('SELECT COUNT(*) AS n$filter', args);
+    return rows.first['n'] as int;
+  }
+
+  /// 只取编号，全选上万张卡时不必解析每张卡的内容。
+  Future<List<String>> cardIds({
+    required String deckId,
+    String search = '',
+    String? chapter,
+    String? plan,
+    String? tag,
+    String? focus,
+  }) async {
+    final (filter, args) = _cardFilter(
+      deckId: deckId,
+      search: search,
+      chapter: chapter,
+      plan: plan,
+      tag: tag,
+      focus: focus,
+    );
+    final rows = await db.rows(
+      'SELECT cards.id AS id$filter ORDER BY cards.rowid',
       args,
-    )).map((r) => StudyCard.fromJson(decodeObject(r['payload']))).toList();
+    );
+    return [for (final r in rows) r['id'] as String];
   }
 
   Future<List<CardSearchHit>> searchCards(

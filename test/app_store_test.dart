@@ -37,6 +37,26 @@ void main() {
     ),
   );
 
+  test('搜索单词时开头命中优先，计数与全选编号使用同一筛选', () async {
+    for (final (id, source) in [
+      ('a', 'reaction\n---\nn. 反应'),
+      ('b', 'act\n---\nv. 行动'),
+      ('c', 'factor\n---\nn. 因素'),
+      ('d', 'action\n---\nn. 行动'),
+    ]) {
+      await store.putCard(StudyCard(id: id, deckId: 'd', source: source));
+    }
+    expect((await store.cards(deckId: 'd', search: ' act ')).map((c) => c.id), [
+      'b',
+      'd',
+      'a',
+      'c',
+    ]);
+    expect(await store.cardCount(deckId: 'd', search: 'act'), 4);
+    expect(await store.cardCount(deckId: 'd', search: '行动'), 2);
+    expect(await store.cardIds(deckId: 'd', search: '行动'), ['b', 'd']);
+  });
+
   test('加入计划、编辑和评分保留卡片顺序，分页不跳卡', () async {
     for (final id in ['a', 'b', 'c', 'd']) {
       await add(id, plan: 'library');

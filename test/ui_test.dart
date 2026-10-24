@@ -103,6 +103,12 @@ class _InteractionStore extends AppStore {
   }
 }
 
+/// 设置页内容会延伸到浮动顶栏下方，先滚到视口中间再操作，避免点到顶栏。
+Future<void> _centerInView(WidgetTester tester, Finder finder) async {
+  await Scrollable.ensureVisible(tester.element(finder), alignment: .5);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   late AppStore store;
   setUp(() async {
@@ -1981,6 +1987,7 @@ void main() {
     await tester.tap(find.text('外观与阅读'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('标准'), 250);
+    await _centerInView(tester, find.text('标准'));
     await tester.tap(find.text('标准'));
     await tester.pumpAndSettle();
     expect(store.preferences.liquidGlass, 'standard');
@@ -2002,6 +2009,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.preferences.liquidGlass, 'ultra');
     await tester.scrollUntilVisible(find.text('固定'), -250);
+    await _centerInView(tester, find.text('固定'));
     await tester.tap(find.text('固定'));
     await tester.pumpAndSettle();
     expect(store.preferences.floatingNavigation, isFalse);
@@ -2027,8 +2035,7 @@ void main() {
     await tester.tap(find.text('外观与阅读'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.text('色彩风格'), 200);
-    await tester.ensureVisible(find.text('柔和'));
-    await tester.pumpAndSettle();
+    await _centerInView(tester, find.text('柔和'));
     final anchor = tester.getRect(find.text('柔和'));
     await tester.tap(find.text('柔和'));
     await tester.pumpAndSettle();
