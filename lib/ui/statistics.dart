@@ -7,12 +7,16 @@ class _StatisticsViews extends StatefulWidget {
   State<_StatisticsViews> createState() => _StatisticsViewsState();
 }
 
-class _StatisticsViewsState extends State<_StatisticsViews> {
+class _StatisticsViewsState extends State<_StatisticsViews>
+    with AutomaticKeepAliveClientMixin<_StatisticsViews> {
   int _tab = 0;
   bool _cognition = true;
   StatisticsPeriod _period = StatisticsPeriod.day;
   late int _revision;
   late Future<(Map<String, dynamic>, List<LearningBucket>)> _data;
+  // 离开视口后保留图表，避免回滑时重新加载使列表高度骤变。
+  @override
+  bool get wantKeepAlive => true;
   @override
   void initState() {
     super.initState();
@@ -44,225 +48,232 @@ class _StatisticsViewsState extends State<_StatisticsViews> {
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      _StatsChoices<int>(
-        options: const {0: '遗忘曲线', 1: '学习情况', 2: '记忆持久度'},
-        value: _tab,
-        onChanged: (v) => setState(() {
-          _tab = v;
-          _load();
-        }),
-      ),
-      const SizedBox(height: 16),
-      if (_tab != 0) ...[
-        if (_tab == 1) ...[
-          _StatsChoices<bool>(
-            options: const {true: '认知情况', false: '复习新学'},
-            value: _cognition,
-            onChanged: (v) => setState(() => _cognition = v),
-          ),
-          const SizedBox(height: 12),
-        ],
-        _StatsChoices<StatisticsPeriod>(
-          options: {for (final p in StatisticsPeriod.values) p: p.label},
-          value: _period,
+  Widget build(BuildContext context) {
+    super.build(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _StatsChoices<int>(
+          options: const {0: '遗忘曲线', 1: '学习情况', 2: '记忆持久度'},
+          value: _tab,
           onChanged: (v) => setState(() {
-            _period = v;
+            _tab = v;
             _load();
           }),
         ),
         const SizedBox(height: 16),
-      ],
-      FutureBuilder<(Map<String, dynamic>, List<LearningBucket>)>(
-        future: _data,
-        builder: (context, snapshot) {
-          // 时间粒度改变时不能继续显示旧分组，否则选中索引与新分组错位。
-          if (snapshot.connectionState != ConnectionState.done) {
-            return const SizedBox(
-              height: 360,
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+        if (_tab != 0) ...[
+          if (_tab == 1) ...[
+            _StatsChoices<bool>(
+              options: const {true: '认知情况', false: '复习新学'},
+              value: _cognition,
+              onChanged: (v) => setState(() => _cognition = v),
+            ),
+            const SizedBox(height: 12),
+          ],
+          _StatsChoices<StatisticsPeriod>(
+            options: {for (final p in StatisticsPeriod.values) p: p.label},
+            value: _period,
+            onChanged: (v) => setState(() {
+              _period = v;
+              _load();
+            }),
+          ),
+          const SizedBox(height: 16),
+        ],
+        FutureBuilder<(Map<String, dynamic>, List<LearningBucket>)>(
+          future: _data,
+          builder: (context, snapshot) {
+            // 时间粒度改变时不能继续显示旧分组，否则选中索引与新分组错位。
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const SizedBox(
+                height: 360,
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              );
+            }
+            if (snapshot.hasError) return Text('加载失败：${snapshot.error}');
+            final data = snapshot.requireData;
+            final theme = Theme.of(context).colorScheme;
+            final now = DateTime.now();
+            final all = data.$2;
+            final today = all.indexWhere(
+              (b) => !now.isBefore(b.start) && now.isBefore(b.end),
             );
-          }
-          if (snapshot.hasError) return Text('加载失败：${snapshot.error}');
-          final data = snapshot.requireData;
-          final theme = Theme.of(context).colorScheme;
-          final now = DateTime.now();
-          final all = data.$2;
-          final today = all.indexWhere(
-            (b) => !now.isBefore(b.start) && now.isBefore(b.end),
-          );
-          final colors = _StatisticsColors(theme);
-          late List<_StatSeries> series;
-          late List<String> labels;
-          late int selected;
-          late String title;
-          late bool bars;
-          late bool percentage;
-          late List<LearningBucket> buckets;
-          if (_tab == 0) {
-            buckets = const [];
-            title = '遗忘曲线';
-            labels = [
-              for (var d = 0; d <= 30; d++)
-                d == 0
-                    ? '今天'
-                    : d == 1
-                    ? '明天'
-                    : d == 2
-                    ? '后天'
-                    : '+$d天',
-            ];
-            selected = 0;
-            bars = false;
-            percentage = true;
-            series = [
-              _StatSeries(
-                '你的学习遗忘曲线',
-                theme.primary,
-                (data.$1['learningCurve'] as List).cast<double?>(),
-                fill: true,
-              ),
-              _StatSeries('艾宾浩斯遗忘曲线', colors.neutral, [
-                for (var d = 0; d <= 30; d++) ebbinghausReference(d.toDouble()),
-              ], dashed: true),
-            ];
-          } else if (_tab == 1) {
-            buckets = all;
-            title = '学习情况';
-            labels = [
-              for (var i = 0; i < all.length; i++)
-                _bucketLabel(all[i], i == today),
-            ];
-            selected = today;
-            bars = true;
-            percentage = false;
-            List<double?> values(
-              int Function(LearningBucket) read, {
-              bool historyOnly = true,
-            }) => [
-              for (final b in all)
-                historyOnly && b.start.isAfter(now) ? null : read(b).toDouble(),
-            ];
-            series = _cognition
-                ? [
-                    _StatSeries(
-                      '认识',
-                      colors.know,
-                      values((b) => b.grades[0]),
-                      stacked: true,
-                    ),
-                    _StatSeries(
-                      '模糊',
-                      colors.vague,
-                      values((b) => b.grades[1]),
-                      stacked: true,
-                    ),
-                    _StatSeries(
-                      '忘记',
-                      colors.forget,
-                      values((b) => b.grades[2]),
-                      stacked: true,
-                    ),
-                    _StatSeries(
-                      '熟知',
-                      colors.mastered,
-                      values((b) => b.grades[3]),
-                      stacked: true,
-                    ),
-                    _StatSeries(
-                      '待学',
-                      colors.pending,
-                      values((b) => b.pending, historyOnly: false),
-                    ),
-                  ]
-                : [
-                    _StatSeries(
-                      '新学',
-                      colors.know,
-                      values((b) => b.newCards),
-                      stacked: true,
-                    ),
-                    _StatSeries(
-                      '复习',
-                      colors.mastered,
-                      values((b) => b.reviewCards),
-                      stacked: true,
-                    ),
-                    _StatSeries(
-                      '待学',
-                      colors.pending,
-                      values((b) => b.pending, historyOnly: false),
-                    ),
-                  ];
-          } else {
-            buckets = all.take(today + 1).toList();
-            title = '记忆持久度';
-            labels = [
-              for (var i = 0; i < buckets.length; i++)
-                _bucketLabel(buckets[i], i == today),
-            ];
-            selected = today;
-            bars = false;
-            percentage = false;
-            series = [
-              _StatSeries('已加入学习的全部卡片', colors.neutral, [
-                for (final b in buckets) b.enrolled.toDouble(),
-              ]),
-              for (var j = 0; j < 4; j++)
+            final colors = _StatisticsColors(theme);
+            late List<_StatSeries> series;
+            late List<String> labels;
+            late int selected;
+            late String title;
+            late bool bars;
+            late bool percentage;
+            late List<LearningBucket> buckets;
+            if (_tab == 0) {
+              buckets = const [];
+              title = '遗忘曲线';
+              labels = [
+                for (var d = 0; d <= 30; d++)
+                  d == 0
+                      ? '今天'
+                      : d == 1
+                      ? '明天'
+                      : d == 2
+                      ? '后天'
+                      : '+$d天',
+              ];
+              selected = 0;
+              bars = false;
+              percentage = true;
+              series = [
                 _StatSeries(
-                  '记忆持久度 ≥ ${[10, 30, 60, 90][j]} 天',
-                  colors.durability[j],
-                  [for (final b in buckets) b.durability[j]?.toDouble()],
+                  '你的学习遗忘曲线',
+                  theme.primary,
+                  (data.$1['learningCurve'] as List).cast<double?>(),
                   fill: true,
                 ),
-            ];
-          }
-          return AnimatedSwitcher(
-            duration: _duration(context, 240),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeIn,
-            child: _Panel(
-              key: ValueKey('panel-$_tab-$_period-$_cognition-$_revision'),
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
+                _StatSeries('艾宾浩斯遗忘曲线', colors.neutral, [
+                  for (var d = 0; d <= 30; d++)
+                    ebbinghausReference(d.toDouble()),
+                ], dashed: true),
+              ];
+            } else if (_tab == 1) {
+              buckets = all;
+              title = '学习情况';
+              labels = [
+                for (var i = 0; i < all.length; i++)
+                  _bucketLabel(all[i], i == today),
+              ];
+              selected = today;
+              bars = true;
+              percentage = false;
+              List<double?> values(
+                int Function(LearningBucket) read, {
+                bool historyOnly = true,
+              }) => [
+                for (final b in all)
+                  historyOnly && b.start.isAfter(now)
+                      ? null
+                      : read(b).toDouble(),
+              ];
+              series = _cognition
+                  ? [
+                      _StatSeries(
+                        '认识',
+                        colors.know,
+                        values((b) => b.grades[0]),
+                        stacked: true,
+                      ),
+                      _StatSeries(
+                        '模糊',
+                        colors.vague,
+                        values((b) => b.grades[1]),
+                        stacked: true,
+                      ),
+                      _StatSeries(
+                        '忘记',
+                        colors.forget,
+                        values((b) => b.grades[2]),
+                        stacked: true,
+                      ),
+                      _StatSeries(
+                        '熟知',
+                        colors.mastered,
+                        values((b) => b.grades[3]),
+                        stacked: true,
+                      ),
+                      _StatSeries(
+                        '待学',
+                        colors.pending,
+                        values((b) => b.pending, historyOnly: false),
+                      ),
+                    ]
+                  : [
+                      _StatSeries(
+                        '新学',
+                        colors.know,
+                        values((b) => b.newCards),
+                        stacked: true,
+                      ),
+                      _StatSeries(
+                        '复习',
+                        colors.mastered,
+                        values((b) => b.reviewCards),
+                        stacked: true,
+                      ),
+                      _StatSeries(
+                        '待学',
+                        colors.pending,
+                        values((b) => b.pending, historyOnly: false),
+                      ),
+                    ];
+            } else {
+              buckets = all.take(today + 1).toList();
+              title = '记忆持久度';
+              labels = [
+                for (var i = 0; i < buckets.length; i++)
+                  _bucketLabel(buckets[i], i == today),
+              ];
+              selected = today;
+              bars = false;
+              percentage = false;
+              series = [
+                _StatSeries('已加入学习的全部卡片', colors.neutral, [
+                  for (final b in buckets) b.enrolled.toDouble(),
+                ]),
+                for (var j = 0; j < 4; j++)
+                  _StatSeries(
+                    '记忆持久度 ≥ ${[10, 30, 60, 90][j]} 天',
+                    colors.durability[j],
+                    [for (final b in buckets) b.durability[j]?.toDouble()],
+                    fill: true,
                   ),
-                  const SizedBox(height: 18),
-                  _StatisticsGraph(
-                    key: ValueKey('$_tab-$_period-$_cognition-$_revision'),
-                    series: series,
-                    labels: labels,
-                    initialIndex: selected,
-                    bars: bars,
-                    percentage: percentage,
-                    bucketDetails: buckets,
-                    showRatios: _tab == 2,
-                  ),
-                  if (_tab == 0 && data.$1['modeledCards'] == 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 14),
-                      child: Text(
-                        '完成首次学习后显示你的个人曲线。',
-                        style: TextStyle(color: theme.onSurfaceVariant),
+              ];
+            }
+            return AnimatedSwitcher(
+              duration: _duration(context, 240),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeIn,
+              child: _Panel(
+                key: ValueKey('panel-$_tab-$_period-$_cognition-$_revision'),
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                ],
+                    const SizedBox(height: 18),
+                    _StatisticsGraph(
+                      key: ValueKey('$_tab-$_period-$_cognition-$_revision'),
+                      series: series,
+                      labels: labels,
+                      initialIndex: selected,
+                      bars: bars,
+                      percentage: percentage,
+                      bucketDetails: buckets,
+                      showRatios: _tab == 2,
+                    ),
+                    if (_tab == 0 && data.$1['modeledCards'] == 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 14),
+                        child: Text(
+                          '完成首次学习后显示你的个人曲线。',
+                          style: TextStyle(color: theme.onSurfaceVariant),
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
-          );
-        },
-      ),
-    ],
-  );
+            );
+          },
+        ),
+      ],
+    );
+  }
+
   String _bucketLabel(LearningBucket b, bool current) => current
       ? switch (_period) {
           StatisticsPeriod.day => '今天',

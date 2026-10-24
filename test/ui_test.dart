@@ -490,6 +490,27 @@ void main() {
     await select('记忆持久度');
     expect(find.text('记忆持久度 ≥ 90 天'), findsOneWidget);
     await select('月');
+    final statisticsState = tester.state(
+      find.byWidgetPredicate(
+        (widget) => widget.runtimeType.toString() == '_StatisticsViews',
+      ),
+    );
+    final position = tester
+        .widget<ListView>(find.byType(ListView).first)
+        .controller!
+        .position;
+    position.jumpTo(position.maxScrollExtent);
+    await tester.pumpAndSettle();
+    expect(statisticsState.mounted, isTrue, reason: '滑到底部不能回收图表并在回滑时重新显示加载占位');
+    for (var step = 0; step < 40 && position.pixels > 0; step++) {
+      final target = (position.pixels - 12).clamp(
+        0.0,
+        position.maxScrollExtent,
+      );
+      position.jumpTo(target);
+      await tester.pumpAndSettle();
+      expect(position.pixels, closeTo(target, .1), reason: '缓慢回滑不能额外跳动');
+    }
     expect(tester.takeException(), isNull);
   });
   testWidgets('今日与累计用时分开，长数值等高对齐，学习月历按星期排布并可翻月', (tester) async {
