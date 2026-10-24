@@ -29,6 +29,11 @@ class _SettingsPage extends StatelessWidget {
         page: _BackupPage(store: store),
       ),
       (
+        icon: Icons.notifications_active_outlined,
+        title: '学习提醒',
+        page: _StudyReminderPage(store: store),
+      ),
+      (
         icon: Icons.help_outline_rounded,
         title: '帮助与反馈',
         page: const _HelpPage(),
@@ -44,8 +49,8 @@ class _SettingsPage extends StatelessWidget {
         horizontalPadding: 16,
         children: [
           for (final group in [
-            (title: '偏好设置', items: entries.take(4).toList()),
-            (title: '更多', items: entries.skip(4).toList()),
+            (title: '偏好设置', items: entries.take(5).toList()),
+            (title: '更多', items: entries.skip(5).toList()),
           ]) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 28, 16, 12),
@@ -714,6 +719,34 @@ class _StudyPrefsPageState extends State<_StudyPrefsPage> {
               ],
             ),
           ),
+          if (!widget.interaction) ...[
+            _AppearanceHeader('专项练习默认值', Icons.school_outlined),
+            _AppearanceCard(
+              child: Column(
+                children: [
+                  _AppearanceMenu(
+                    title: '每轮练习数量',
+                    value: '${p.practiceLimit}',
+                    options: const {'10': '10 张', '20': '20 张', '50': '50 张'},
+                    onChanged: (value) => _action(context, () async {
+                      p.practiceLimit = int.parse(value);
+                      await widget.store.savePreferences();
+                    }),
+                  ),
+                  const Divider(height: 1, indent: 16, endIndent: 16),
+                  SwitchListTile(
+                    title: const Text('默认随机顺序'),
+                    subtitle: const Text('新一轮练习使用，可在开始前单独调整'),
+                    value: p.practiceShuffle,
+                    onChanged: (value) => _action(context, () async {
+                      p.practiceShuffle = value;
+                      await widget.store.savePreferences();
+                    }),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -787,6 +820,7 @@ class _BackupPageState extends State<_BackupPage> {
                       return;
                     }
                     await widget.store.restore(bytes);
+                    await StudyReminders.sync();
                     if (context.mounted) _toast(context, '已恢复资料、图片和学习进度');
                   }),
                 ),

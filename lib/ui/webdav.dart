@@ -138,6 +138,7 @@ class _WebDavPanelState extends State<_WebDavPanel> {
       final client = WebDavClient(_connected!);
       try {
         await widget.store.restore(await client.download(file));
+        await StudyReminders.sync();
         if (mounted) setState(() => _message = '已恢复资料、图片和学习进度');
       } finally {
         client.close();

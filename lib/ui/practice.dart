@@ -67,8 +67,9 @@ class _PracticeSetupPage extends StatefulWidget {
 
 class _PracticeSetupPageState extends State<_PracticeSetupPage> {
   late String _focus = widget.focus ?? 'all';
-  String _limit = '20';
-  bool _shuffle = true, _busy = false;
+  late String _limit = '${widget.store.preferences.practiceLimit}';
+  late bool _shuffle = widget.store.preferences.practiceShuffle;
+  bool _busy = false;
   late Future<PracticeSession?> _session = widget.store.practiceSession();
   late Future<List<StudyCard>> _preview = _previewCards();
 

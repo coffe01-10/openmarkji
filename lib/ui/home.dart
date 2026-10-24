@@ -844,7 +844,6 @@ class _StatsPage extends StatelessWidget {
         final overview = data[0] as Map<String, dynamic>,
             activity = data[1] as List<Map<String, dynamic>>;
         final formal = overview['formal'] as int;
-        final c = Theme.of(context).colorScheme;
         return _Page(
           navigationTitle: '统计',
           title: '',
@@ -968,15 +967,6 @@ class _StatsPage extends StatelessWidget {
                       .toList(),
                 ),
               ),
-            const SizedBox(height: 16),
-            Text(
-              '回忆表现仅统计首次评分；重学单独记录。未来数量根据当前排期计算，未包含未来新卡。',
-              style: TextStyle(
-                fontSize: 12,
-                height: 1.7,
-                color: c.onSurfaceVariant,
-              ),
-            ),
           ],
         );
       },

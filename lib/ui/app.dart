@@ -27,6 +27,7 @@ import '../content/official_decks.dart';
 import '../data/anki_import.dart';
 import '../data/app_store.dart';
 import '../data/diagnostics.dart';
+import '../data/study_reminders.dart';
 import '../data/app_updates.dart';
 import '../data/app_update_installer.dart';
 import '../data/webdav.dart';
@@ -48,6 +49,7 @@ part 'editor.dart';
 part 'import.dart';
 part 'study.dart';
 part 'settings.dart';
+part 'study_reminders.dart';
 part 'webdav.dart';
 part 'appearance.dart';
 part 'support.dart';
@@ -379,6 +381,8 @@ String _pageName(Widget page) => switch (page) {
   _AboutPage() => '关于',
   _HelpPage() => '帮助与反馈',
   _DiagnosticsPage() => '捕捉日志',
+  _StudyReminderPage() => '学习提醒',
+  _ReminderTimePage() => '提醒时间',
   _FeedbackPage() => '反馈报告',
   _ => page.runtimeType.toString(),
 };

@@ -209,6 +209,11 @@ class Preferences {
     this.studyHaptics = true,
     this.showStudyProgress = true,
     this.showRecallHint = true,
+    this.studyReminder = false,
+    this.reminderHour = 20,
+    this.reminderMinute = 0,
+    this.practiceLimit = 20,
+    this.practiceShuffle = true,
   });
   String theme;
   int color, defaultLimit, defaultAlgorithm;
@@ -220,6 +225,10 @@ class Preferences {
   double dockOpacity, dockBlur;
   int relearnGap;
   bool studyHaptics, showStudyProgress, showRecallHint;
+  bool studyReminder;
+  int reminderHour, reminderMinute;
+  int practiceLimit;
+  bool practiceShuffle;
   Map<String, dynamic> toJson() => {
     'theme': theme,
     'color': color,
@@ -240,6 +249,11 @@ class Preferences {
     'studyHaptics': studyHaptics,
     'showStudyProgress': showStudyProgress,
     'showRecallHint': showRecallHint,
+    'studyReminder': studyReminder,
+    'reminderHour': reminderHour,
+    'reminderMinute': reminderMinute,
+    'practiceLimit': practiceLimit,
+    'practiceShuffle': practiceShuffle,
   };
   factory Preferences.fromJson(Map<String, dynamic> j) => Preferences(
     theme: j['theme'] ?? 'system',
@@ -261,6 +275,11 @@ class Preferences {
     studyHaptics: j['studyHaptics'] ?? true,
     showStudyProgress: j['showStudyProgress'] ?? true,
     showRecallHint: j['showRecallHint'] ?? true,
+    studyReminder: j['studyReminder'] ?? false,
+    reminderHour: j['reminderHour'] ?? 20,
+    reminderMinute: j['reminderMinute'] ?? 0,
+    practiceLimit: j['practiceLimit'] ?? 20,
+    practiceShuffle: j['practiceShuffle'] ?? true,
   );
 }
 

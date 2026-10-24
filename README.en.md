@@ -50,7 +50,7 @@ Memory works through [F#1#right timing] and [F#2#active recall].
 
 ### Android Installation
 
-[v1.03 Release](https://github.com/coffe01-10/openmarkji/releases/tag/v1.03). Most phones choose ARM64 APK; older devices can select the corresponding architecture on the release page.
+[v1.05 Release](https://github.com/coffe01-10/openmarkji/releases/tag/v1.05). Most phones choose ARM64 APK; older devices can select the corresponding architecture on the release page. You can also download updates directly from Settings → About → Check for updates.
 
 1. Create a new deck, import text or write cards
 2. Select cards in the deck, click "Add to Plan"

@@ -25,6 +25,10 @@ Use Dart formatting, two-space indentation, `snake_case.dart` filenames, `UpperC
 
 Keep the shared UI style consistent: surface hierarchy, superellipse corners, grouped settings, typography, spacing, liquid-glass materials, and motion. Reuse `lib/ui/glass/` and shared controls in `lib/ui/design.dart`. Apply appearance preferences consistently across new screens and controls; preserve light/dark themes and reduced-motion support.
 
+新增设置板块、二级入口或控件时，必须检查完整的进入与返回动画，以及菜单展开、选择和收回的衔接；设置各层入口复用 `_SettingsPageLink`，菜单复用现有玻璃控件，不另起一套默认转场。用内置浏览器检查实际动效、返回位置和中途取消，兼顾减少动态效果设置。优先复用已有测试，不因新增一个板块就堆一组回归测试；没有检查到的端侧效果如实说明。
+
+如果二级页修改了入口展示的值，动画中的入口也必须监听最新值；返回过程中不能先回显旧值再跳到新值。
+
 ## Testing Guidelines
 
 Use `flutter_test` and name files `*_test.dart`. Add focused regressions for scheduling, transactions, imports, backups, and changed interactions. Independent practice and same-day relearning must not alter long-term scheduling. Check narrow layouts and large text for UI changes. Use the built-in browser by default, rather than Playwright. No numeric coverage threshold is configured.

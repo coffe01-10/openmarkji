@@ -97,7 +97,6 @@ class _StatisticsViewsState extends State<_StatisticsViews> {
           late List<_StatSeries> series;
           late List<String> labels;
           late int selected;
-          late String note;
           late String title;
           late bool bars;
           late bool percentage;
@@ -121,15 +120,14 @@ class _StatisticsViewsState extends State<_StatisticsViews> {
             series = [
               _StatSeries(
                 '你的学习遗忘曲线',
-                colors.total,
+                theme.primary,
                 (data.$1['learningCurve'] as List).cast<double?>(),
+                fill: true,
               ),
-              _StatSeries('艾宾浩斯遗忘曲线', colors.teal, [
+              _StatSeries('艾宾浩斯遗忘曲线', colors.neutral, [
                 for (var d = 0; d <= 30; d++) ebbinghausReference(d.toDouble()),
-              ]),
+              ], dashed: true),
             ];
-            note =
-                '个人曲线按 ${data.$1['modeledCards']} 张已学卡片的 MMX 状态估算，从刚复习后的 100% 起算，假设之后不再复习。参考线按经典采样插值示意，节省率与个人回忆概率并非同一测量指标。';
           } else if (_tab == 1) {
             buckets = all;
             title = '学习情况';
@@ -149,10 +147,30 @@ class _StatisticsViewsState extends State<_StatisticsViews> {
             ];
             series = _cognition
                 ? [
-                    _StatSeries('认识', colors.know, values((b) => b.grades[0])),
-                    _StatSeries('模糊', colors.vague, values((b) => b.grades[1])),
-                    _StatSeries('忘记', colors.total, values((b) => b.grades[2])),
-                    _StatSeries('熟知', colors.teal, values((b) => b.grades[3])),
+                    _StatSeries(
+                      '认识',
+                      colors.know,
+                      values((b) => b.grades[0]),
+                      stacked: true,
+                    ),
+                    _StatSeries(
+                      '模糊',
+                      colors.vague,
+                      values((b) => b.grades[1]),
+                      stacked: true,
+                    ),
+                    _StatSeries(
+                      '忘记',
+                      colors.forget,
+                      values((b) => b.grades[2]),
+                      stacked: true,
+                    ),
+                    _StatSeries(
+                      '熟知',
+                      colors.mastered,
+                      values((b) => b.grades[3]),
+                      stacked: true,
+                    ),
                     _StatSeries(
                       '待学',
                       colors.pending,
@@ -160,11 +178,17 @@ class _StatisticsViewsState extends State<_StatisticsViews> {
                     ),
                   ]
                 : [
-                    _StatSeries('新学', colors.know, values((b) => b.newCards)),
+                    _StatSeries(
+                      '新学',
+                      colors.know,
+                      values((b) => b.newCards),
+                      stacked: true,
+                    ),
                     _StatSeries(
                       '复习',
-                      colors.total,
+                      colors.mastered,
                       values((b) => b.reviewCards),
+                      stacked: true,
                     ),
                     _StatSeries(
                       '待学',
@@ -172,7 +196,6 @@ class _StatisticsViewsState extends State<_StatisticsViews> {
                       values((b) => b.pending, historyOnly: false),
                     ),
                   ];
-            note = '认知情况与复习新学仅计正式首次评分，当日重学不重复计数；用时包含当日重学。灰色待学按当前排期预测，逾期卡片计入今天，未包含未来新增卡片。';
           } else {
             buckets = all.take(today + 1).toList();
             title = '记忆持久度';
@@ -184,17 +207,17 @@ class _StatisticsViewsState extends State<_StatisticsViews> {
             bars = false;
             percentage = false;
             series = [
-              _StatSeries('已加入学习的全部卡片', colors.total, [
+              _StatSeries('已加入学习的全部卡片', colors.neutral, [
                 for (final b in buckets) b.enrolled.toDouble(),
               ]),
               for (var j = 0; j < 4; j++)
                 _StatSeries(
                   '记忆持久度 ≥ ${[10, 30, 60, 90][j]} 天',
-                  [colors.vague, colors.know, colors.teal, colors.deepTeal][j],
+                  colors.durability[j],
                   [for (final b in buckets) b.durability[j]?.toDouble()],
+                  fill: true,
                 ),
             ];
-            note = '持久度为安排的复习间隔；各门槛累计包含，≥90 天也计入 ≥10 天。按当前学习计划（含暂停）回看各期末状态，已移出或删除的卡片不计。旧记录按保存状态估算，缺失状态处留空。';
           }
           return AnimatedSwitcher(
             duration: _duration(context, 240),
@@ -211,14 +234,6 @@ class _StatisticsViewsState extends State<_StatisticsViews> {
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '左右滑动查看 · 点选日期查看数值',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: theme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 18),
@@ -240,15 +255,6 @@ class _StatisticsViewsState extends State<_StatisticsViews> {
                         style: TextStyle(color: theme.onSurfaceVariant),
                       ),
                     ),
-                  const SizedBox(height: 18),
-                  Text(
-                    note,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.6,
-                      color: theme.onSurfaceVariant,
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -288,32 +294,51 @@ class _StatsChoices<T> extends StatelessWidget {
   );
 }
 
+// 各色经 dataviz 校验：相邻色在色觉缺陷模拟下 ΔE ≥ 8，正常视觉 ΔE ≥ 15。
 class _StatisticsColors {
   _StatisticsColors(ColorScheme scheme)
-    : total = scheme.brightness == Brightness.dark
-          ? const Color(0xffff976e)
-          : const Color(0xffe9673f),
-      vague = scheme.brightness == Brightness.dark
-          ? const Color(0xffffc164)
-          : const Color(0xffcc8600),
-      know = scheme.brightness == Brightness.dark
-          ? const Color(0xff92d4c2)
-          : const Color(0xff4a9d88),
-      teal = scheme.brightness == Brightness.dark
-          ? const Color(0xff54d8c6)
-          : const Color(0xff009e8b),
-      deepTeal = scheme.brightness == Brightness.dark
-          ? const Color(0xff4fa99d)
-          : const Color(0xff14675b),
+    : know = _dark(scheme) ? const Color(0xff199e70) : const Color(0xff1f9e74),
+      vague = _dark(scheme) ? const Color(0xffc98500) : const Color(0xffe09b00),
+      forget = _dark(scheme)
+          ? const Color(0xffd9466e)
+          : const Color(0xffd9473f),
+      mastered = _dark(scheme)
+          ? const Color(0xff3987e5)
+          : const Color(0xff2a78d6),
+      durability = _dark(scheme)
+          ? const [
+              Color(0xff1b7a5f),
+              Color(0xff2fa07f),
+              Color(0xff5cc4a2),
+              Color(0xff9be3c9),
+            ]
+          : const [
+              Color(0xff5fb596),
+              Color(0xff2e977a),
+              Color(0xff16795f),
+              Color(0xff0b4d3c),
+            ],
+      neutral = scheme.onSurfaceVariant,
       pending = scheme.outlineVariant;
-  final Color total, vague, know, teal, deepTeal, pending;
+  static bool _dark(ColorScheme s) => s.brightness == Brightness.dark;
+  final Color know, vague, forget, mastered, neutral, pending;
+  final List<Color> durability;
 }
 
 class _StatSeries {
-  const _StatSeries(this.label, this.color, this.values);
+  const _StatSeries(
+    this.label,
+    this.color,
+    this.values, {
+    this.stacked = false,
+    this.fill = false,
+    this.dashed = false,
+  });
   final String label;
   final Color color;
   final List<double?> values;
+  // stacked：柱状图中叠成同一根柱；fill：折线下方绘制渐变面积；dashed：参考线。
+  final bool stacked, fill, dashed;
 }
 
 class _StatisticsGraph extends StatefulWidget {
@@ -353,17 +378,21 @@ class _StatisticsGraphState extends State<_StatisticsGraph> {
     final c = Theme.of(context).colorScheme;
     final textScaler = MediaQuery.textScalerOf(context);
     final slot = 46.0 * math.max(1, textScaler.scale(1));
-    final rawMax = widget.series
-        .expand((s) => s.values)
-        .whereType<double>()
-        .fold<double>(0, math.max);
+    // 叠放柱按整根柱高取最大值，否则顶部会越出绘图区。
+    final stacked = widget.series.where((s) => s.stacked);
+    final rawMax = [
+      for (final s in widget.series.where((s) => !s.stacked))
+        ...s.values.whereType<double>(),
+      for (var i = 0; i < widget.labels.length; i++)
+        stacked.fold<double>(0, (sum, s) => sum + (s.values[i] ?? 0)),
+    ].fold<double>(0, math.max);
     final maxY = widget.percentage
         ? 100.0
         : rawMax <= 10
         ? 10.0
         : (rawMax / 5).ceil() * 5.0;
     final chartHeight = 280.0 + textScaler.scale(12);
-    final labelHeight = textScaler.scale(12) + 14;
+    final labelHeight = textScaler.scale(12) + 18;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients || _positioned) return;
       _positioned = true;
@@ -380,7 +409,10 @@ class _StatisticsGraphState extends State<_StatisticsGraph> {
       value == null
           ? '—'
           : '${value.toStringAsFixed(widget.percentage ? 1 : 0)}${widget.percentage ? '%' : ''}',
-      style: const TextStyle(fontWeight: FontWeight.w600),
+      style: const TextStyle(
+        fontWeight: FontWeight.w600,
+        fontFeatures: [FontFeature.tabularFigures()],
+      ),
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -447,8 +479,8 @@ class _StatisticsGraphState extends State<_StatisticsGraph> {
                             maxY: maxY,
                             bars: widget.bars,
                             color: c.primary,
-                            gridColor: c.outlineVariant.withValues(alpha: .35),
-                            stripeColor: c.onSurface.withValues(alpha: .025),
+                            surface: c.surfaceContainerLow,
+                            gridColor: c.outlineVariant.withValues(alpha: .45),
                             labelColor: c.onSurfaceVariant,
                             scaler: textScaler,
                             labelHeight: labelHeight,
@@ -462,90 +494,122 @@ class _StatisticsGraphState extends State<_StatisticsGraph> {
             ),
           ],
         ),
-        const SizedBox(height: 20),
-        Row(
-          children: [
-            IconButton(
-              tooltip: '上一个时间点',
-              visualDensity: VisualDensity.compact,
-              onPressed: _selected == 0
-                  ? null
-                  : () => _pick(_selected - 1, slot),
-              icon: const Icon(Icons.chevron_left_rounded),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.fromLTRB(6, 6, 6, 10),
+          decoration: ShapeDecoration(
+            color: c.surfaceContainerHigh.withValues(alpha: .6),
+            shape: RoundedSuperellipseBorder(
+              borderRadius: BorderRadius.circular(20),
             ),
-            Expanded(
-              child: Text(
-                widget.labels[_selected],
-                textAlign: TextAlign.center,
-                style: TextStyle(fontWeight: FontWeight.w600, color: c.primary),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    tooltip: '上一个时间点',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _selected == 0
+                        ? null
+                        : () => _pick(_selected - 1, slot),
+                    icon: const Icon(Icons.chevron_left_rounded),
+                  ),
+                  Expanded(
+                    child: Text(
+                      widget.labels[_selected],
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: c.primary,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: '下一个时间点',
+                    visualDensity: VisualDensity.compact,
+                    onPressed: _selected == widget.labels.length - 1
+                        ? null
+                        : () => _pick(_selected + 1, slot),
+                    icon: const Icon(Icons.chevron_right_rounded),
+                  ),
+                ],
               ),
-            ),
-            IconButton(
-              tooltip: '下一个时间点',
-              visualDensity: VisualDensity.compact,
-              onPressed: _selected == widget.labels.length - 1
-                  ? null
-                  : () => _pick(_selected + 1, slot),
-              icon: const Icon(Icons.chevron_right_rounded),
-            ),
-          ],
-        ),
-        for (var i = 0; i < widget.series.length; i++)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 7),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 22,
-                  child: Stack(
-                    alignment: Alignment.center,
+              for (var i = 0; i < widget.series.length; i++)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  child: Row(
                     children: [
-                      Container(
-                        height: widget.bars ? 12 : 3,
+                      SizedBox(
                         width: 22,
-                        decoration: BoxDecoration(
-                          color: widget.series[i].color,
-                          borderRadius: BorderRadius.circular(3),
+                        height: 12,
+                        child: CustomPaint(
+                          painter: _LegendKeyPainter(
+                            widget.series[i],
+                            bar: widget.bars,
+                          ),
                         ),
                       ),
-                      if (!widget.bars)
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: widget.series[i].color,
-                            shape: BoxShape.circle,
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          widget.series[i].label,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      number(widget.series[i].values[_selected]),
+                      if (widget.showRatios &&
+                          i > 0 &&
+                          widget.series[i].values[_selected] != null)
+                        Text(
+                          ' · ${widget.bucketDetails[_selected].enrolled == 0 ? '0' : (widget.series[i].values[_selected]! / widget.bucketDetails[_selected].enrolled * 100).toStringAsFixed(1)}%',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: c.onSurfaceVariant,
                           ),
                         ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    widget.series[i].label,
-                    style: const TextStyle(fontSize: 13),
+              if (widget.bars) ...[
+                Divider(
+                  height: 14,
+                  indent: 10,
+                  endIndent: 10,
+                  color: c.outlineVariant.withValues(alpha: .5),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.schedule_rounded,
+                        size: 16,
+                        color: c.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '学习时长：${(widget.bucketDetails[_selected].elapsedMs / 60000).floor()} 分 ${(widget.bucketDetails[_selected].elapsedMs / 1000).floor() % 60} 秒',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: c.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                number(widget.series[i].values[_selected]),
-                if (widget.showRatios &&
-                    i > 0 &&
-                    widget.series[i].values[_selected] != null)
-                  Text(
-                    ' · ${widget.bucketDetails[_selected].enrolled == 0 ? '0' : (widget.series[i].values[_selected]! / widget.bucketDetails[_selected].enrolled * 100).toStringAsFixed(1)}%',
-                    style: TextStyle(fontSize: 12, color: c.onSurfaceVariant),
-                  ),
               ],
-            ),
+            ],
           ),
-        if (widget.bars) ...[
-          const SizedBox(height: 8),
-          Text(
-            '学习时长：${(widget.bucketDetails[_selected].elapsedMs / 60000).floor()} 分 ${(widget.bucketDetails[_selected].elapsedMs / 1000).floor() % 60} 秒',
-            style: TextStyle(fontSize: 13, color: c.onSurfaceVariant),
-          ),
-        ],
+        ),
       ],
     );
   }
@@ -585,13 +649,17 @@ class _StatisticsAxisPainter extends CustomPainter {
     for (var i = 0; i <= 5; i++) {
       text.text = TextSpan(
         text: '${(maxY * (5 - i) / 5).round()}${percentage ? '%' : ''}',
-        style: TextStyle(fontSize: 10, color: color),
+        style: TextStyle(
+          fontSize: 10,
+          color: color,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
       );
       text.layout();
       text.paint(
         canvas,
         Offset(
-          size.width - text.width - 5,
+          size.width - text.width - 6,
           6 + height * i / 5 - text.height / 2,
         ),
       );
@@ -607,6 +675,54 @@ class _StatisticsAxisPainter extends CustomPainter {
       scaler != old.scaler;
 }
 
+class _LegendKeyPainter extends CustomPainter {
+  _LegendKeyPainter(this.series, {required this.bar});
+  final _StatSeries series;
+  final bool bar;
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    if (bar) {
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: center, width: 12, height: 12),
+          const Radius.circular(4),
+        ),
+        Paint()..color = series.color,
+      );
+      return;
+    }
+    final line = Path()
+      ..moveTo(1, center.dy)
+      ..lineTo(size.width - 1, center.dy);
+    canvas.drawPath(
+      series.dashed ? _dashed(line) : line,
+      Paint()
+        ..color = series.color
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round
+        ..style = PaintingStyle.stroke,
+    );
+    if (!series.dashed) {
+      canvas.drawCircle(center, 3.5, Paint()..color = series.color);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LegendKeyPainter old) =>
+      old.series.color != series.color || old.bar != bar;
+}
+
+Path _dashed(Path source, {double dash = 5, double gap = 4}) {
+  final out = Path();
+  for (final metric in source.computeMetrics()) {
+    for (var d = 0.0; d < metric.length; d += dash + gap) {
+      out.addPath(metric.extractPath(d, d + dash), Offset.zero);
+    }
+  }
+  return out;
+}
+
 class _StatisticsPlotPainter extends CustomPainter {
   _StatisticsPlotPainter({
     required this.series,
@@ -615,8 +731,8 @@ class _StatisticsPlotPainter extends CustomPainter {
     required this.maxY,
     required this.bars,
     required this.color,
+    required this.surface,
     required this.gridColor,
-    required this.stripeColor,
     required this.labelColor,
     required this.scaler,
     required this.labelHeight,
@@ -626,99 +742,229 @@ class _StatisticsPlotPainter extends CustomPainter {
   final int selected;
   final double maxY, labelHeight;
   final bool bars;
-  final Color color, gridColor, stripeColor, labelColor;
+  final Color color, surface, gridColor, labelColor;
   final TextScaler scaler;
   @override
   void paint(Canvas canvas, Size size) {
     final slot = size.width / labels.length;
     final height = size.height - labelHeight - 12;
     final bottom = height + 6;
+    double yOf(double v) => bottom - v / maxY * height;
+
+    // 选中列：圆角高亮底，标签放进同色胶囊。
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(selected * slot + 3, 0, slot - 6, bottom + 4),
+        const Radius.circular(12),
+      ),
+      Paint()..color = color.withValues(alpha: .07),
+    );
+    final grid = Paint()
+      ..color = gridColor
+      ..strokeWidth = 1;
+    for (var i = 0; i < 5; i++) {
+      final y = 6 + height * i / 5;
+      canvas.drawPath(
+        _dashed(
+          Path()
+            ..moveTo(0, y)
+            ..lineTo(size.width, y),
+          dash: 3,
+          gap: 4,
+        ),
+        grid..style = PaintingStyle.stroke,
+      );
+    }
+    canvas.drawLine(
+      Offset(0, bottom),
+      Offset(size.width, bottom),
+      Paint()
+        ..color = gridColor.withValues(alpha: 1)
+        ..strokeWidth = 1,
+    );
+
     final text = TextPainter(
       textDirection: TextDirection.ltr,
       textScaler: scaler,
     );
     for (var i = 0; i < labels.length; i++) {
-      if (i.isEven) {
-        canvas.drawRect(
-          Rect.fromLTWH(i * slot, 6, slot, height),
-          Paint()..color = stripeColor,
-        );
-      }
+      final active = i == selected;
       text.text = TextSpan(
         text: labels[i],
         style: TextStyle(
           fontSize: 10,
-          color: i == selected ? color : labelColor,
-          fontWeight: i == selected ? FontWeight.w700 : FontWeight.normal,
+          color: active ? color : labelColor,
+          fontWeight: active ? FontWeight.w700 : FontWeight.normal,
         ),
       );
       text.layout();
-      text.paint(canvas, Offset((i + .5) * slot - text.width / 2, bottom + 9));
+      final origin = Offset((i + .5) * slot - text.width / 2, bottom + 10);
+      if (active) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(
+              origin.dx - 6,
+              origin.dy - 3,
+              text.width + 12,
+              text.height + 6,
+            ),
+            Radius.circular(text.height),
+          ),
+          Paint()..color = color.withValues(alpha: .14),
+        );
+      }
+      text.paint(canvas, origin);
     }
-    for (var i = 0; i <= 5; i++) {
-      final y = 6 + height * i / 5;
-      canvas.drawLine(
-        Offset(0, y),
-        Offset(size.width, y),
-        Paint()
-          ..color = gridColor
-          ..strokeWidth = .7,
-      );
+    text.dispose();
+
+    if (bars) {
+      _paintBars(canvas, slot, bottom, yOf);
+    } else {
+      _paintLines(canvas, size, slot, bottom, yOf);
     }
-    canvas.drawRect(
-      Rect.fromLTWH(selected * slot, 6, slot, height),
-      Paint()..color = color.withValues(alpha: .05),
+  }
+
+  void _paintBars(
+    Canvas canvas,
+    double slot,
+    double bottom,
+    double Function(double) yOf,
+  ) {
+    final stacked = [
+      for (final s in series)
+        if (s.stacked) s,
+    ];
+    final singles = [
+      for (final s in series)
+        if (!s.stacked) s,
+    ];
+    final groups = (stacked.isEmpty ? 0 : 1) + singles.length;
+    const gap = 3.0;
+    final w = math.min(18.0, (slot * .64 - gap * (groups - 1)) / groups);
+    final start = (slot - (w * groups + gap * (groups - 1))) / 2;
+    const radius = Radius.circular(4);
+    for (var i = 0; i < labels.length; i++) {
+      final alpha = i == selected ? 1.0 : .82;
+      var left = i * slot + start;
+      if (stacked.isNotEmpty) {
+        var base = bottom;
+        final visible = [
+          for (final s in stacked)
+            if ((s.values[i] ?? 0) > 0) s,
+        ];
+        for (var k = 0; k < visible.length; k++) {
+          final s = visible[k];
+          final h = bottom - yOf(s.values[i]!);
+          final top = k == visible.length - 1;
+          // 段间留 2px 表面色缝隙，只给最顶段做圆角数据端。
+          final segment = Rect.fromLTWH(
+            left,
+            base - h,
+            w,
+            math.max(0, h - (k == 0 ? 0 : 2)),
+          );
+          canvas.drawRRect(
+            RRect.fromRectAndCorners(
+              segment,
+              topLeft: top ? radius : Radius.zero,
+              topRight: top ? radius : Radius.zero,
+            ),
+            Paint()..color = s.color.withValues(alpha: alpha),
+          );
+          base -= h;
+        }
+        left += w + gap;
+      }
+      for (final s in singles) {
+        final v = s.values[i];
+        if (v != null && v > 0) {
+          canvas.drawRRect(
+            RRect.fromRectAndCorners(
+              Rect.fromLTRB(left, yOf(v), left + w, bottom),
+              topLeft: radius,
+              topRight: radius,
+            ),
+            Paint()..color = s.color.withValues(alpha: alpha),
+          );
+        }
+        left += w + gap;
+      }
+    }
+  }
+
+  void _paintLines(
+    Canvas canvas,
+    Size size,
+    double slot,
+    double bottom,
+    double Function(double) yOf,
+  ) {
+    canvas.drawLine(
+      Offset((selected + .5) * slot, 6),
+      Offset((selected + .5) * slot, bottom),
+      Paint()
+        ..color = color.withValues(alpha: .35)
+        ..strokeWidth = 1,
     );
-    for (var j = 0; j < series.length; j++) {
-      final s = series[j];
-      final path = Path();
-      var connected = false;
-      final paint = Paint()
-        ..color = s.color
-        ..strokeWidth = 2.5
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round;
+    final fills = series.where((s) => s.fill).length;
+    for (final s in series) {
+      // 按空值断开成多段；水平控制点的三次曲线在相邻点间单调，不会越界。
+      final segments = <List<Offset>>[[]];
       for (var i = 0; i < s.values.length; i++) {
         final v = s.values[i];
         if (v == null) {
-          connected = false;
+          if (segments.last.isNotEmpty) segments.add([]);
           continue;
         }
-        final x = (i + .5) * slot;
-        final y = bottom - v / maxY * height;
-        if (bars) {
-          final w = slot * .7 / series.length;
-          if (v > 0) {
-            canvas.drawRRect(
-              RRect.fromRectAndRadius(
-                Rect.fromLTWH(
-                  i * slot + slot * .15 + j * w,
-                  y,
-                  w - 1,
-                  bottom - y,
-                ),
-                const Radius.circular(2),
-              ),
-              Paint()..color = s.color,
-            );
-          }
-        } else {
-          if (connected) {
-            path.lineTo(x, y);
-          } else {
-            path.moveTo(x, y);
-          }
-          connected = true;
-          canvas.drawCircle(
-            Offset(x, y),
-            i == selected ? 4.5 : 2.5,
-            Paint()..color = s.color,
+        segments.last.add(Offset((i + .5) * slot, yOf(v)));
+      }
+      for (final points in segments.where((p) => p.isNotEmpty)) {
+        final line = Path()..moveTo(points.first.dx, points.first.dy);
+        for (var k = 1; k < points.length; k++) {
+          final a = points[k - 1], b = points[k];
+          final mid = (a.dx + b.dx) / 2;
+          line.cubicTo(mid, a.dy, mid, b.dy, b.dx, b.dy);
+        }
+        if (s.fill && points.length > 1) {
+          final area = Path.from(line)
+            ..lineTo(points.last.dx, bottom)
+            ..lineTo(points.first.dx, bottom)
+            ..close();
+          canvas.drawPath(
+            area,
+            Paint()
+              ..shader = LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  s.color.withValues(alpha: fills > 1 ? .10 : .22),
+                  s.color.withValues(alpha: 0),
+                ],
+              ).createShader(Rect.fromLTRB(0, 6, size.width, bottom)),
           );
         }
+        canvas.drawPath(
+          s.dashed ? _dashed(line) : line,
+          Paint()
+            ..color = s.color
+            ..strokeWidth = 2
+            ..style = PaintingStyle.stroke
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round,
+        );
+        if (points.length == 1) {
+          canvas.drawCircle(points.first, 3, Paint()..color = s.color);
+        }
       }
-      if (!bars) canvas.drawPath(path, paint);
     }
-    text.dispose();
+    // 选中点最后绘制，带表面色描边，避免被其他线遮住。
+    for (final s in series) {
+      final v = s.values[selected];
+      if (v == null) continue;
+      final center = Offset((selected + .5) * slot, yOf(v));
+      canvas.drawCircle(center, 6, Paint()..color = surface);
+      canvas.drawCircle(center, 4.5, Paint()..color = s.color);
+    }
   }
 
   @override

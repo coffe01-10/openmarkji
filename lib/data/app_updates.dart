@@ -2,10 +2,10 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-// Keep semantic versions for update comparisons; the release label is 1.04.
-const appVersion = '1.0.4';
-const appDisplayVersion = '1.04';
-const appBuild = '5';
+// Keep semantic versions for update comparisons; the release label is 1.05.
+const appVersion = '1.0.5';
+const appDisplayVersion = '1.05';
+const appBuild = '6';
 const releaseFeed = String.fromEnvironment(
   'OPENMARKJI_UPDATE_URL',
   defaultValue: 'https://gist.githubusercontent.com/coffe01-10/d395a32c92cdabf8454bb6dd2403c76a/raw/releases.json',

@@ -1,5 +1,10 @@
 {
-  "version": "1.0.4",
-  "notes": "OpenMarkji 1.04：新增 Android 应用内更新，支持下载安装包、查看进度、取消下载及安装重试，无需跳转 GitHub；帮助与反馈支持捕捉和导出日志。修复新加入计划和共享卡片无法开始学习、完成后首页仍显示继续学习的问题；优化选卡工具栏滚动手感、专项练习切换及批量操作的加载和完成动画。",
-  "downloadUrl": "https://github.com/coffe01-10/openmarkji/releases/latest"
+  "version": "1.0.5",
+  "notes": "OpenMarkji 1.05：新增单选与多选卡片，支持选项乱序、作答反馈及三档评分建议；支持卡片引用预览、跳转和右滑撤销。扩展表格、Anki 导入及牌组分享包；新增 Android 本地学习提醒和专项练习默认设置。改进统计图表、关于页面与设置动效，精简说明文字，修复返回动画回显旧时间和首次加载数字重叠。",
+  "downloadUrl": "https://github.com/coffe01-10/openmarkji/releases/latest",
+  "android": {
+    "arm64-v8a": "https://github.com/coffe01-10/openmarkji/releases/download/v1.05/OpenMarkji-1.05-android-arm64-v8a.apk",
+    "armeabi-v7a": "https://github.com/coffe01-10/openmarkji/releases/download/v1.05/OpenMarkji-1.05-android-armeabi-v7a.apk",
+    "x86_64": "https://github.com/coffe01-10/openmarkji/releases/download/v1.05/OpenMarkji-1.05-android-x86_64.apk"
+  }
 }

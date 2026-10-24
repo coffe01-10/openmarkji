@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'data/app_store.dart';
 import 'data/database.dart';
 import 'data/diagnostics.dart';
+import 'data/study_reminders.dart';
 import 'ui/app.dart';
 
 Future<void> main() async {
@@ -34,6 +37,12 @@ class _BootstrapState extends State<Bootstrap> {
     final store = AppStore(AppDatabase());
     try {
       await store.initialize();
+      // 提醒恢复失败不应妨碍打开资料库；详细错误可随诊断日志导出。
+      unawaited(
+        StudyReminders.sync().catchError((Object error, StackTrace stack) {
+          DiagnosticLog.instance.error('恢复学习提醒', error, stack);
+        }),
+      );
       return store;
     } catch (_) {
       await store.db.close();

@@ -124,7 +124,12 @@ void main() {
       ..relearnGap = 5
       ..studyHaptics = false
       ..showStudyProgress = false
-      ..showRecallHint = false;
+      ..showRecallHint = false
+      ..studyReminder = true
+      ..reminderHour = 21
+      ..reminderMinute = 35
+      ..practiceLimit = 50
+      ..practiceShuffle = false;
     await store.savePreferences();
     final restored = Preferences.fromJson(
       jsonDecode((await store.setting('preferences'))!) as Map<String, dynamic>,
@@ -142,12 +147,19 @@ void main() {
     expect(restored.studyHaptics, isFalse);
     expect(restored.showStudyProgress, isFalse);
     expect(restored.showRecallHint, isFalse);
+    expect(restored.studyReminder, isTrue);
+    expect(restored.reminderHour, 21);
+    expect(restored.reminderMinute, 35);
+    expect((restored.practiceLimit, restored.practiceShuffle), (50, false));
     final legacy = Preferences.fromJson({'theme': 'dark', 'fontSize': 22});
     expect(legacy.theme, 'dark');
     expect(legacy.fontSize, 22);
     expect(legacy.liquidGlass, 'ultra');
     expect(legacy.relearnGap, 3);
     expect(legacy.dockBlur, 16);
+    expect(legacy.studyReminder, isFalse);
+    expect((legacy.reminderHour, legacy.reminderMinute), (20, 0));
+    expect((legacy.practiceLimit, legacy.practiceShuffle), (20, true));
   });
 
   test('资料库不自动加入计划，重复导入可跳过或保留', () async {
