@@ -238,7 +238,6 @@ class _PracticePageState extends State<_PracticePage> {
   bool _hasChoices = false;
   RecallGrade? _choiceSuggestion;
   var _contentKey = GlobalKey<ContentViewState>();
-  double? _progressFrom;
   int _turn = 0;
   @override
   void initState() {
@@ -259,7 +258,6 @@ class _PracticePageState extends State<_PracticePage> {
           : await widget.store.card(session.queue.first);
       if (mounted) {
         setState(() {
-          _progressFrom = _progress(_session);
           _session = session;
           _card = card;
           _turn++;
@@ -297,22 +295,26 @@ class _PracticePageState extends State<_PracticePage> {
     });
   }
 
-  Future<void> _grade(RecallGrade grade) => _action(context, () async {
-    setState(() => _busy = true);
-    try {
-      _elapsed.stop();
-      await widget.store.gradePractice(
-        grade,
-        elapsedMs: _elapsed.elapsedMilliseconds,
-      );
-      await _load();
-    } finally {
-      if (mounted) {
-        _elapsed.start();
-        setState(() => _busy = false);
+  Future<void> _grade(RecallGrade grade) async {
+    if (_busy) return;
+    await _action(context, () async {
+      setState(() => _busy = true);
+      try {
+        _elapsed.stop();
+        await widget.store.gradePractice(
+          grade,
+          elapsedMs: _elapsed.elapsedMilliseconds,
+        );
+        await _load();
+      } finally {
+        if (mounted) {
+          _elapsed.start();
+          setState(() => _busy = false);
+        }
       }
-    }
-  });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = _session;
@@ -361,7 +363,6 @@ class _PracticePageState extends State<_PracticePage> {
                               const SizedBox(height: 12),
                               _SmoothProgress(
                                 value: _progress(session)!,
-                                from: _progressFrom,
                                 minHeight: 4,
                               ),
                               const SizedBox(height: 12),
@@ -434,46 +435,47 @@ class _PracticePageState extends State<_PracticePage> {
                           ),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                          child: _StudyActionSwitcher(
-                            revealed: _revealed,
-                            rating: Row(
-                              children: [
-                                for (final (index, grade)
-                                    in _recallChoices.indexed) ...[
-                                  if (index > 0) const SizedBox(width: 8),
-                                  Expanded(
-                                    child: FilledButton.tonal(
-                                      style: FilledButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 8,
-                                          vertical: 14,
+                          child: IgnorePointer(
+                            ignoring: _busy,
+                            child: _StudyActionSwitcher(
+                              revealed: _revealed,
+                              rating: Row(
+                                children: [
+                                  for (final (index, grade)
+                                      in _recallChoices.indexed) ...[
+                                    if (index > 0) const SizedBox(width: 8),
+                                    Expanded(
+                                      child: FilledButton.tonal(
+                                        style: FilledButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 8,
+                                            vertical: 14,
+                                          ),
+                                          side: grade == _choiceSuggestion
+                                              ? BorderSide(
+                                                  color: c.primary,
+                                                  width: 2,
+                                                )
+                                              : BorderSide.none,
                                         ),
-                                        side: grade == _choiceSuggestion
-                                            ? BorderSide(
-                                                color: c.primary,
-                                                width: 2,
-                                              )
-                                            : BorderSide.none,
+                                        onPressed: () => _grade(grade),
+                                        child: Text(grade.label),
                                       ),
-                                      onPressed: _busy
-                                          ? null
-                                          : () => _grade(grade),
-                                      child: Text(grade.label),
                                     ),
-                                  ),
+                                  ],
                                 ],
-                              ],
-                            ),
-                            reveal: SizedBox(
-                              width: double.infinity,
-                              child: FilledButton.icon(
-                                onPressed: _busy ? null : _reveal,
-                                icon: Icon(
-                                  _hasChoices
-                                      ? Icons.fact_check_outlined
-                                      : Icons.visibility_outlined,
+                              ),
+                              reveal: SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.icon(
+                                  onPressed: _reveal,
+                                  icon: Icon(
+                                    _hasChoices
+                                        ? Icons.fact_check_outlined
+                                        : Icons.visibility_outlined,
+                                  ),
+                                  label: Text(_hasChoices ? '提交答案' : '揭晓答案'),
                                 ),
-                                label: Text(_hasChoices ? '提交答案' : '揭晓答案'),
                               ),
                             ),
                           ),

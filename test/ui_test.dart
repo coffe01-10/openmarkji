@@ -101,6 +101,17 @@ class _InteractionStore extends AppStore {
     await gradeGate?.future;
     await super.grade(grade, elapsedMs: elapsedMs, at: at);
   }
+
+  @override
+  Future<void> gradePractice(
+    RecallGrade grade, {
+    int elapsedMs = 0,
+    DateTime? at,
+  }) async {
+    gradeCalls++;
+    await gradeGate?.future;
+    await super.gradePractice(grade, elapsedMs: elapsedMs, at: at);
+  }
 }
 
 /// 设置页内容会延伸到浮动顶栏下方，先滚到视口中间再操作，避免点到顶栏。
@@ -1307,6 +1318,7 @@ void main() {
   });
 
   testWidgets('收藏筛选后可专项练习，中途续练并查看巩固结果', (tester) async {
+    final observed = await observedStore();
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
     tester.platformDispatcher.textScaleFactorTestValue = 1.6;
@@ -1342,7 +1354,25 @@ void main() {
     expect(find.text('揭晓答案'), findsOneWidget);
     await tester.tap(find.text('揭晓答案'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('忘记'));
+    final rating = find.widgetWithText(FilledButton, '忘记');
+    final material = find.descendant(
+      of: rating,
+      matching: find.byType(Material),
+    );
+    final color = tester.widget<Material>(material).color;
+    observed.gradeGate = Completer<void>();
+    addTearDown(() {
+      if (!observed.gradeGate!.isCompleted) observed.gradeGate!.complete();
+    });
+    await tester.tap(rating);
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.widget<FilledButton>(rating).onPressed, isNotNull);
+      expect(tester.widget<Material>(material).color, color);
+    }
+    tester.widget<FilledButton>(rating).onPressed!();
+    expect(observed.gradeCalls, 1);
+    observed.gradeGate!.complete();
     await tester.pumpAndSettle();
     expect((await store.practiceSession())!.attempts, 1);
     await tester.pageBack();
