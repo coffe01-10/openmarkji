@@ -1,10 +1,10 @@
 {
-  "version": "1.0.5",
-  "notes": "OpenMarkji 1.05：新增单选与多选卡片，支持选项乱序、作答反馈及三档评分建议；支持卡片引用预览、跳转和右滑撤销。扩展表格、Anki 导入及牌组分享包；新增 Android 本地学习提醒和专项练习默认设置。改进统计图表、关于页面与设置动效，精简说明文字，修复返回动画回显旧时间和首次加载数字重叠。",
+  "version": "1.0.6",
+  "notes": "OpenMarkji 1.06：统一设置详情页的沉浸式顶栏，修复统计页向上滚动突然跳动；优化学习、揭晓答案与专项练习的过渡和进度动画；改进牌组卡片搜索、标签筛选与全选，题面和答案分层预览并高亮搜索词。",
   "downloadUrl": "https://github.com/coffe01-10/openmarkji/releases/latest",
   "android": {
-    "arm64-v8a": "https://github.com/coffe01-10/openmarkji/releases/download/v1.05/OpenMarkji-1.05-android-arm64-v8a.apk",
-    "armeabi-v7a": "https://github.com/coffe01-10/openmarkji/releases/download/v1.05/OpenMarkji-1.05-android-armeabi-v7a.apk",
-    "x86_64": "https://github.com/coffe01-10/openmarkji/releases/download/v1.05/OpenMarkji-1.05-android-x86_64.apk"
+    "arm64-v8a": "https://github.com/coffe01-10/openmarkji/releases/download/v1.06/OpenMarkji-1.06-android-arm64-v8a.apk",
+    "armeabi-v7a": "https://github.com/coffe01-10/openmarkji/releases/download/v1.06/OpenMarkji-1.06-android-armeabi-v7a.apk",
+    "x86_64": "https://github.com/coffe01-10/openmarkji/releases/download/v1.06/OpenMarkji-1.06-android-x86_64.apk"
   }
 }
