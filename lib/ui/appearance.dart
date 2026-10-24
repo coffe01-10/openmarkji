@@ -56,20 +56,14 @@ class _AppearancePageState extends State<_AppearancePage> {
   Widget build(BuildContext context) {
     final p = widget.store.preferences;
     final c = Theme.of(context).colorScheme;
-    return Scaffold(
-      backgroundColor: _settingsCanvas(c),
-      appBar: AppBar(
-        clipBehavior: Clip.none,
-        leading: _appearanceBack(context),
-        title: const Text('外观与阅读'),
-        backgroundColor: _settingsCanvas(c),
-      ),
+    return _SettingsScaffold(
+      title: '外观与阅读',
       body: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+            padding: _settingsContentPadding(context),
             children: [
               _AppearanceLivePreview(preferences: p),
               _AppearanceChoices(

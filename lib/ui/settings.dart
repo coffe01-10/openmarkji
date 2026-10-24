@@ -575,6 +575,42 @@ class _RowExpandTransition extends StatelessWidget {
   }
 }
 
+class _SettingsScaffold extends StatelessWidget {
+  const _SettingsScaffold({required this.title, required this.body});
+  final String title;
+  final Widget body;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = _settingsCanvas(Theme.of(context).colorScheme);
+    return Scaffold(
+      backgroundColor: background,
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        clipBehavior: Clip.none,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        flexibleSpace: FloatingHeader(
+          backgroundColor: background,
+          overhang: 16,
+          child: const SizedBox.expand(),
+        ),
+        title: Text(title),
+        leading: _appearanceBack(context),
+      ),
+      body: body,
+    );
+  }
+}
+
+EdgeInsets _settingsContentPadding(BuildContext context) => EdgeInsets.fromLTRB(
+  16,
+  MediaQuery.paddingOf(context).top + kToolbarHeight + 8,
+  16,
+  40,
+);
+
 class _SettingsDetail extends StatelessWidget {
   const _SettingsDetail({required this.title, required this.child});
   final String title;
@@ -582,21 +618,14 @@ class _SettingsDetail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final background = _settingsCanvas(Theme.of(context).colorScheme);
-    return Scaffold(
-      backgroundColor: background,
-      appBar: AppBar(
-        clipBehavior: Clip.none,
-        backgroundColor: background,
-        title: Text(title),
-        leading: _appearanceBack(context),
-      ),
+    return _SettingsScaffold(
+      title: title,
       body: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 720),
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 40),
+            padding: _settingsContentPadding(context),
             children: [child],
           ),
         ),

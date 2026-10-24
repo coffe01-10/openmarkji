@@ -61,6 +61,9 @@ class ContentViewState extends State<ContentView> {
   late Map<int, _ChoiceAttempt> _choices = _choiceAttempts();
   bool _missingChoice = false;
 
+  /// 只在本次由未揭晓切到揭晓时播放解答入场，初次展示已揭晓的卡片不动。
+  bool _animateAnswer = false;
+
   Map<int, _ChoiceAttempt> _choiceAttempts() => {
     for (final node in _parsed.nodes)
       if (node.choice != null) node.offset: _ChoiceAttempt(node.choice!),
@@ -94,12 +97,15 @@ class ContentViewState extends State<ContentView> {
       _groups.clear();
       _choices = _choiceAttempts();
       _missingChoice = false;
+      _animateAnswer = false;
     }
     if (oldWidget.revealed && !widget.revealed) {
       _groups.clear();
       _choices = _choiceAttempts();
       _missingChoice = false;
+      _animateAnswer = false;
     }
+    if (!oldWidget.revealed && widget.revealed) _animateAnswer = true;
   }
 
   Future<void> _reference(ContentNode node) async {
@@ -202,6 +208,7 @@ class ContentViewState extends State<ContentView> {
   @override
   Widget build(BuildContext context) {
     final widgets = <Widget>[];
+    int? answerStart;
     var line = <ContentNode>[];
     void flush() {
       if (line.isEmpty) return;
@@ -224,6 +231,7 @@ class ContentViewState extends State<ContentView> {
       if (n.kind == 'answer') {
         flush();
         if (!widget.revealed) break;
+        answerStart ??= widgets.length;
         widgets.add(
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 18),
@@ -335,6 +343,19 @@ class ContentViewState extends State<ContentView> {
       }
     }
     flush();
+    if (answerStart != null && _animateAnswer) {
+      final answer = widgets.sublist(answerStart);
+      widgets
+        ..removeRange(answerStart, widgets.length)
+        ..add(
+          _RevealIn(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: answer,
+            ),
+          ),
+        );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: widgets,
@@ -471,24 +492,28 @@ class ContentViewState extends State<ContentView> {
           ],
           if (_missingChoice && attempt.selected.isEmpty && !answered) ...[
             const SizedBox(height: 8),
-            Text(
-              '请选择答案后再提交',
-              style: TextStyle(color: colors.error, fontSize: 13),
+            _RevealIn(
+              child: Text(
+                '请选择答案后再提交',
+                style: TextStyle(color: colors.error, fontSize: 13),
+              ),
             ),
           ],
           if (outcome != null) ...[
             const SizedBox(height: 12),
-            Text(
-              switch (outcome) {
-                ChoiceOutcome.correct => '答对了',
-                ChoiceOutcome.partial => '漏选了正确选项',
-                ChoiceOutcome.incorrect => '答错了，已标出正确答案',
-              },
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: outcome == ChoiceOutcome.incorrect
-                    ? colors.error
-                    : colors.primary,
+            _RevealIn(
+              child: Text(
+                switch (outcome) {
+                  ChoiceOutcome.correct => '答对了',
+                  ChoiceOutcome.partial => '漏选了正确选项',
+                  ChoiceOutcome.incorrect => '答错了，已标出正确答案',
+                },
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: outcome == ChoiceOutcome.incorrect
+                      ? colors.error
+                      : colors.primary,
+                ),
               ),
             ),
           ],
@@ -554,12 +579,20 @@ class ContentViewState extends State<ContentView> {
                 color: colors.primaryContainer,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text(
-                visible ? n.text : '  ··· $group  ',
-                style: TextStyle(
-                  fontSize: widget.store.preferences.fontSize,
-                  color: colors.onPrimaryContainer,
-                  fontWeight: FontWeight.w600,
+              child: AnimatedSize(
+                duration: _motion(context, 220),
+                curve: Curves.easeOutCubic,
+                child: AnimatedSwitcher(
+                  duration: _motion(context, 200),
+                  child: Text(
+                    visible ? n.text : '  ··· $group  ',
+                    key: ValueKey(visible),
+                    style: TextStyle(
+                      fontSize: widget.store.preferences.fontSize,
+                      color: colors.onPrimaryContainer,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -819,4 +852,26 @@ class _InlineImageState extends State<_InlineImage> {
             ),
     );
   }
+}
+
+Duration _motion(BuildContext context, int ms) =>
+    MediaQuery.disableAnimationsOf(context)
+    ? Duration.zero
+    : Duration(milliseconds: ms);
+
+/// 新出现的内容淡入并轻微上浮。
+class _RevealIn extends StatelessWidget {
+  const _RevealIn({required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0, end: 1),
+    duration: _motion(context, 320),
+    curve: Curves.easeOutCubic,
+    child: child,
+    builder: (context, t, child) => Opacity(
+      opacity: t,
+      child: Transform.translate(offset: Offset(0, 12 * (1 - t)), child: child),
+    ),
+  );
 }

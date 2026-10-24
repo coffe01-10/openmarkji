@@ -238,11 +238,18 @@ class _PracticePageState extends State<_PracticePage> {
   bool _hasChoices = false;
   RecallGrade? _choiceSuggestion;
   var _contentKey = GlobalKey<ContentViewState>();
+  double? _progressFrom;
+  int _turn = 0;
   @override
   void initState() {
     super.initState();
     _load();
   }
+
+  static double? _progress(PracticeSession? session) =>
+      session == null || session.total == 0
+      ? null
+      : (session.completed + session.skipped) / session.total;
 
   Future<void> _load() async {
     try {
@@ -252,8 +259,10 @@ class _PracticePageState extends State<_PracticePage> {
           : await widget.store.card(session.queue.first);
       if (mounted) {
         setState(() {
+          _progressFrom = _progress(_session);
           _session = session;
           _card = card;
+          _turn++;
           _revealed = false;
           _hasChoices =
               card != null &&
@@ -350,11 +359,10 @@ class _PracticePageState extends State<_PracticePage> {
                                 '已掌握 ${session.completed} / ${session.total} 张 · 已作答 ${session.attempts} 次',
                               ),
                               const SizedBox(height: 12),
-                              LinearProgressIndicator(
-                                value:
-                                    (session.completed + session.skipped) /
-                                    session.total,
-                                borderRadius: BorderRadius.circular(8),
+                              _SmoothProgress(
+                                value: _progress(session)!,
+                                from: _progressFrom,
+                                minHeight: 4,
                               ),
                               const SizedBox(height: 12),
                               Text(
@@ -368,29 +376,43 @@ class _PracticePageState extends State<_PracticePage> {
                           ),
                         ),
                         Expanded(
-                          child: SingleChildScrollView(
-                            padding: const EdgeInsets.all(16),
-                            child: _AppearanceCard(
-                              child: Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    Text(
-                                      _hasChoices
-                                          ? '选择答案，提交后查看解析'
-                                          : '先主动回忆，再揭晓答案',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                    const SizedBox(height: 20),
-                                    ContentView(
-                                      key: _contentKey,
-                                      source: card.source,
-                                      store: widget.store,
-                                      revealed: _revealed,
-                                    ),
-                                  ],
+                          child: AnimatedSwitcher(
+                            duration: _duration(context, 260),
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            layoutBuilder: (current, previous) => Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                for (final child in previous)
+                                  IgnorePointer(child: child),
+                                ?current,
+                              ],
+                            ),
+                            child: SingleChildScrollView(
+                              key: ValueKey(_turn),
+                              padding: const EdgeInsets.all(16),
+                              child: _AppearanceCard(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      Text(
+                                        _hasChoices
+                                            ? '选择答案，提交后查看解析'
+                                            : '先主动回忆，再揭晓答案',
+                                        style: const TextStyle(fontSize: 12),
+                                      ),
+                                      const SizedBox(height: 20),
+                                      ContentView(
+                                        key: _contentKey,
+                                        source: card.source,
+                                        store: widget.store,
+                                        revealed: _revealed,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -412,47 +434,49 @@ class _PracticePageState extends State<_PracticePage> {
                           ),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                          child: _revealed
-                              ? Row(
-                                  children: [
-                                    for (final (index, grade)
-                                        in _recallChoices.indexed) ...[
-                                      if (index > 0) const SizedBox(width: 8),
-                                      Expanded(
-                                        child: FilledButton.tonal(
-                                          style: FilledButton.styleFrom(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 14,
-                                            ),
-                                            side: grade == _choiceSuggestion
-                                                ? BorderSide(
-                                                    color: c.primary,
-                                                    width: 2,
-                                                  )
-                                                : BorderSide.none,
-                                          ),
-                                          onPressed: _busy
-                                              ? null
-                                              : () => _grade(grade),
-                                          child: Text(grade.label),
+                          child: _StudyActionSwitcher(
+                            revealed: _revealed,
+                            rating: Row(
+                              children: [
+                                for (final (index, grade)
+                                    in _recallChoices.indexed) ...[
+                                  if (index > 0) const SizedBox(width: 8),
+                                  Expanded(
+                                    child: FilledButton.tonal(
+                                      style: FilledButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 14,
                                         ),
+                                        side: grade == _choiceSuggestion
+                                            ? BorderSide(
+                                                color: c.primary,
+                                                width: 2,
+                                              )
+                                            : BorderSide.none,
                                       ),
-                                    ],
-                                  ],
-                                )
-                              : SizedBox(
-                                  width: double.infinity,
-                                  child: FilledButton.icon(
-                                    onPressed: _busy ? null : _reveal,
-                                    icon: Icon(
-                                      _hasChoices
-                                          ? Icons.fact_check_outlined
-                                          : Icons.visibility_outlined,
+                                      onPressed: _busy
+                                          ? null
+                                          : () => _grade(grade),
+                                      child: Text(grade.label),
                                     ),
-                                    label: Text(_hasChoices ? '提交答案' : '揭晓答案'),
                                   ),
+                                ],
+                              ],
+                            ),
+                            reveal: SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: _busy ? null : _reveal,
+                                icon: Icon(
+                                  _hasChoices
+                                      ? Icons.fact_check_outlined
+                                      : Icons.visibility_outlined,
                                 ),
+                                label: Text(_hasChoices ? '提交答案' : '揭晓答案'),
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -463,15 +487,10 @@ class _PracticePageState extends State<_PracticePage> {
     );
   }
 
-  Widget _summary(PracticeSession session) => ListView(
-    padding: const EdgeInsets.all(24),
+  Widget _summary(PracticeSession session) => _CompletionView(
+    store: widget.store,
+    label: '专项练习完成',
     children: [
-      Icon(
-        Icons.task_alt_rounded,
-        size: 68,
-        color: Theme.of(context).colorScheme.primary,
-      ),
-      const SizedBox(height: 24),
       const Text(
         '又巩固了一轮',
         textAlign: TextAlign.center,

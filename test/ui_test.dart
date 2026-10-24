@@ -672,6 +672,11 @@ void main() {
       await tester.pumpAndSettle();
       verifyBars(dark ? Brightness.light : Brightness.dark);
       expect(tester.getTopLeft(find.byType(AppBar)).dy, 0);
+      expect(
+        tester.getTopLeft(find.byType(ListView).last).dy,
+        0,
+        reason: '设置详情的内容视口应延伸到状态栏下方，而不是被不透明顶栏截断',
+      );
       await tester.pageBack();
       await tester.pumpAndSettle();
       verifyBars(dark ? Brightness.light : Brightness.dark);

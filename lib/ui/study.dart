@@ -29,6 +29,7 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
   RecallGrade? _choiceSuggestion;
   var _contentKey = GlobalKey<ContentViewState>();
   double _swipeDistance = 0;
+  double? _progressFrom;
   int _turn = 0;
   final _watch = Stopwatch();
   @override
@@ -65,6 +66,7 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
       final undo = await widget.store.setting('undo') != null;
       if (mounted) {
         setState(() {
+          _progressFrom = _progress(_session);
           _session = session;
           _card = card;
           _deck = deck;
@@ -90,6 +92,11 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
       }
     }
   }
+
+  static double? _progress(StudySession? session) => session == null
+      ? null
+      : session.completed /
+            math.max(1, session.completed + session.queue.length);
 
   void _reveal() {
     ChoiceOutcome? outcome;
@@ -284,20 +291,10 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
                                         ],
                                       ),
                                       const SizedBox(height: 14),
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: LinearProgressIndicator(
-                                          value:
-                                              session.completed /
-                                              math.max(
-                                                1,
-                                                session.completed +
-                                                    session.queue.length,
-                                              ),
-                                          minHeight: 5,
-                                          backgroundColor:
-                                              c.surfaceContainerHigh,
-                                        ),
+                                      _SmoothProgress(
+                                        value: _progress(session)!,
+                                        from: _progressFrom,
+                                        backgroundColor: c.surfaceContainerHigh,
                                       ),
                                     ],
                                   ),
@@ -555,74 +552,253 @@ class _StudyPageState extends State<_StudyPage> with WidgetsBindingObserver {
   }
 
   Widget _completion(BuildContext context, StudySession session) =>
-      SingleChildScrollView(
-        padding: const EdgeInsets.all(28),
-        child: Column(
+      _StudyCompletion(store: widget.store, session: session);
+}
+
+class _StudyCompletion extends StatefulWidget {
+  const _StudyCompletion({required this.store, required this.session});
+  final AppStore store;
+  final StudySession session;
+  @override
+  State<_StudyCompletion> createState() => _StudyCompletionState();
+}
+
+class _StudyCompletionState extends State<_StudyCompletion> {
+  late final _overview = widget.store.overview();
+
+  @override
+  Widget build(BuildContext context) => _CompletionView(
+    store: widget.store,
+    label: '今日学习完成',
+    children: [
+      const Text(
+        '今天，也进步了一点',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
+      ),
+      const SizedBox(height: 12),
+      Text(
+        '完成 ${widget.session.completed} 张卡片\n下一次相遇，已经为你安排好了。',
+        textAlign: TextAlign.center,
+        style: const TextStyle(height: 1.8),
+      ),
+      const SizedBox(height: 30),
+      _Load(
+        future: _overview,
+        builder: (d) => Row(
           children: [
-            const SizedBox(height: 30),
-            Container(
-              padding: const EdgeInsets.all(30),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.done_all_rounded,
-                size: 64,
-                color: Theme.of(context).colorScheme.primary,
+            Expanded(
+              child: _Metric(
+                label: '首次回忆',
+                value: '${d['formal']}',
+                icon: Icons.style_outlined,
               ),
             ),
-            const SizedBox(height: 30),
-            const Text(
-              '今天，也进步了一点',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '完成 ${session.completed} 张卡片\n下一次相遇，已经为你安排好了。',
-              textAlign: TextAlign.center,
-              style: const TextStyle(height: 1.8),
-            ),
-            const SizedBox(height: 30),
-            _Load(
-              future: widget.store.overview(),
-              builder: (d) => Row(
-                children: [
-                  Expanded(
-                    child: _Metric(
-                      label: '首次回忆',
-                      value: '${d['formal']}',
-                      icon: Icons.style_outlined,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _Metric(
-                      label: '当日重学',
-                      value: '${d['practice']}',
-                      icon: Icons.refresh,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _Metric(
-                      label: '分钟',
-                      value: '${((d['elapsed'] as int) / 60000).ceil()}',
-                      icon: Icons.schedule,
-                    ),
-                  ),
-                ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: _Metric(
+                label: '当日重学',
+                value: '${d['practice']}',
+                icon: Icons.refresh,
               ),
             ),
-            const SizedBox(height: 32),
-            FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('回到今日'),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _Metric(
+                label: '分钟',
+                value: '${((d['elapsed'] as int) / 60000).ceil()}',
+                icon: Icons.schedule,
+              ),
             ),
           ],
         ),
+      ),
+      const SizedBox(height: 32),
+      Center(
+        child: FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('回到今日'),
+        ),
+      ),
+    ],
+  );
+}
+
+/// 完成页：描环、弹出徽章、画出对勾并散开光点，随后内容依次浮现。
+class _CompletionView extends StatefulWidget {
+  const _CompletionView({
+    required this.store,
+    required this.label,
+    required this.children,
+  });
+  final AppStore store;
+  final String label;
+  final List<Widget> children;
+  @override
+  State<_CompletionView> createState() => _CompletionViewState();
+}
+
+class _CompletionViewState extends State<_CompletionView>
+    with SingleTickerProviderStateMixin {
+  late final _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1800),
+  );
+  var _started = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.value = 1;
+    } else {
+      _controller.forward();
+      if (widget.store.preferences.studyHaptics) HapticFeedback.mediumImpact();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Animation<double> _interval(double begin, double end, [Curve? curve]) =>
+      CurvedAnimation(
+        parent: _controller,
+        curve: Interval(begin, end, curve: curve ?? Curves.easeOutCubic),
       );
+
+  @override
+  Widget build(BuildContext context) {
+    final c = Theme.of(context).colorScheme;
+    var order = 0;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Semantics(
+              label: widget.label,
+              child: SizedBox.square(
+                dimension: 180,
+                child: CustomPaint(
+                  painter: _CompletionPainter(
+                    ring: _interval(0, .36, Curves.easeInOutCubic),
+                    badge: _interval(.18, .52, Curves.easeOutBack),
+                    check: _interval(.42, .64),
+                    burst: _interval(.5, 1),
+                    colors: c,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final child in widget.children)
+            if (child is SizedBox)
+              child
+            else
+              () {
+                // 内容紧跟对勾依次浮现，靠后的项最多再晚一点点。
+                final begin = math.min(.52 + order++ * .06, .7);
+                final t = _interval(begin, begin + .3);
+                return FadeTransition(
+                  opacity: t,
+                  child: SlideTransition(
+                    position: Tween(
+                      begin: const Offset(0, .25),
+                      end: Offset.zero,
+                    ).animate(t),
+                    child: child,
+                  ),
+                );
+              }(),
+        ],
+      ),
+    );
+  }
+}
+
+class _CompletionPainter extends CustomPainter {
+  _CompletionPainter({
+    required this.ring,
+    required this.badge,
+    required this.check,
+    required this.burst,
+    required this.colors,
+  }) : super(repaint: Listenable.merge([ring, badge, check, burst]));
+  final Animation<double> ring, badge, check, burst;
+  final ColorScheme colors;
+
+  static const _sparks = 14;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide * .3;
+    // 光点在对勾画出时向外散开，并在末段淡出。
+    final b = burst.value;
+    if (b > 0 && b < 1) {
+      final palette = [colors.primary, colors.tertiary, colors.secondary];
+      for (var i = 0; i < _sparks; i++) {
+        final angle = i * 2 * math.pi / _sparks + (i.isEven ? .12 : -.08);
+        final reach =
+            radius * (1.18 + (i % 3) * .14 + b * (.42 + (i % 4) * .06));
+        final at = center + Offset(math.cos(angle), math.sin(angle)) * reach;
+        canvas.drawCircle(
+          at,
+          (i % 3 == 0 ? 4.2 : 3) * (1 - b * .5),
+          Paint()..color = palette[i % 3].withValues(alpha: (1 - b) * .9),
+        );
+      }
+    }
+    final r = ring.value;
+    if (r > 0) {
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius + 12),
+        -math.pi / 2,
+        2 * math.pi * r,
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 4
+          ..strokeCap = StrokeCap.round
+          ..color = colors.primary.withValues(alpha: .35 + .25 * (1 - b)),
+      );
+    }
+    final s = badge.value;
+    if (s > 0) {
+      canvas.drawCircle(
+        center,
+        radius * s,
+        Paint()..color = colors.primaryContainer,
+      );
+    }
+    final k = check.value;
+    if (k > 0) {
+      final path = Path()
+        ..moveTo(center.dx - radius * .42, center.dy + radius * .02)
+        ..lineTo(center.dx - radius * .12, center.dy + radius * .32)
+        ..lineTo(center.dx + radius * .46, center.dy - radius * .3);
+      final metric = path.computeMetrics().first;
+      canvas.drawPath(
+        metric.extractPath(0, metric.length * k),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = radius * .16
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round
+          ..color = colors.primary,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_CompletionPainter old) => old.colors != colors;
 }
 
 /// 两种操作始终共用同一高度和底部基线，切换时不会先缩短再跳回。

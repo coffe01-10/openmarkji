@@ -879,6 +879,34 @@ class _Load<T> extends StatelessWidget {
   );
 }
 
+/// 进度变化时平滑过渡；首次出现时可从 [from] 补完上一步的增长。
+class _SmoothProgress extends StatelessWidget {
+  const _SmoothProgress({
+    required this.value,
+    this.from,
+    this.minHeight = 5,
+    this.backgroundColor,
+  });
+  final double value;
+  final double? from;
+  final double minHeight;
+  final Color? backgroundColor;
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: BorderRadius.circular(8),
+    child: TweenAnimationBuilder<double>(
+      tween: Tween(begin: from ?? value, end: value),
+      duration: _duration(context, 420),
+      curve: Curves.easeOutCubic,
+      builder: (context, v, _) => LinearProgressIndicator(
+        value: v,
+        minHeight: minHeight,
+        backgroundColor: backgroundColor,
+      ),
+    ),
+  );
+}
+
 class _Pill extends StatelessWidget {
   const _Pill(this.text, {this.icon});
   final String text;

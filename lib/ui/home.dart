@@ -136,15 +136,11 @@ class _TodayPage extends StatelessWidget {
                             ),
                             if (remaining + completed > 0) ...[
                               const SizedBox(height: 18),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: ExcludeSemantics(
-                                  child: LinearProgressIndicator(
-                                    value: completed / (remaining + completed),
-                                    minHeight: 5,
-                                    backgroundColor: c.onPrimaryContainer
-                                        .withValues(alpha: .08),
-                                  ),
+                              ExcludeSemantics(
+                                child: _SmoothProgress(
+                                  value: completed / (remaining + completed),
+                                  backgroundColor: c.onPrimaryContainer
+                                      .withValues(alpha: .08),
                                 ),
                               ),
                               const SizedBox(height: 8),
