@@ -1106,6 +1106,11 @@ void main() {
     await tester.pumpAndSettle();
     final actions = find.byKey(const ValueKey('study-actions'));
     final initial = tester.getRect(actions);
+    final progress = find.byType(LinearProgressIndicator);
+    final progressElement = progress.evaluate().single;
+    var previousProgress = tester
+        .widget<LinearProgressIndicator>(progress)
+        .value!;
     final first = tester.widget<ContentView>(find.byType(ContentView)).source;
     await tester.tap(find.text('揭晓答案'));
     await tester.pumpAndSettle();
@@ -1136,6 +1141,11 @@ void main() {
     observed.gradeGate!.complete();
     for (var i = 0; i < 40; i++) {
       await tester.pump(const Duration(milliseconds: 16));
+      expect(progress, findsOneWidget);
+      expect(progress.evaluate().single, same(progressElement));
+      final value = tester.widget<LinearProgressIndicator>(progress).value!;
+      expect(value, greaterThanOrEqualTo(previousProgress));
+      previousProgress = value;
       for (final area in actions.evaluate()) {
         final box = area.renderObject! as RenderBox;
         expect(box.localToGlobal(Offset.zero) & box.size, initial);
@@ -1145,6 +1155,10 @@ void main() {
     final next = tester.widget<ContentView>(find.byType(ContentView));
     expect(next.source, isNot(first));
     expect(next.revealed, isFalse);
+    expect(
+      tester.widget<LinearProgressIndicator>(progress).value,
+      closeTo(1 / 3, .000001),
+    );
     expect(tester.getRect(actions), initial);
     tester.view.physicalSize = const Size(320, 668);
     tester.platformDispatcher.textScaleFactorTestValue = 1.6;
